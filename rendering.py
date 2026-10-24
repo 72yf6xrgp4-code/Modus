@@ -12,20 +12,22 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-from config import URLS, CORTES, PESTANAS_CON_STATS
+from config import URLS, CORTES, PESTANAS_CON_STATS, MUESTRA_MIN_PARTIDOS, MARGEN_VALUE
 from helpers import (
     safe_float, color_volatilidad, calcular_tendencia, sanitize_prob,
     buscar_jugador, calcular_yield, pct, badge_yield, obtener_bandera,
+    es_admin, fecha_jornada_madrid, es_value, icono_yield,
 )
 from data_loading import (
-    cargar_todo, cargar_jugadores_desde, obtener_proximos_partidos_api,
+    cargar_todo, cargar_jugadores_desde,
     obtener_proximos_partidos_csv,
-    cargar_forma_reciente, detectar_jornada_de_hoy,
+    cargar_forma_reciente, detectar_jornada_de_hoy, jornada_mas_reciente,
 )
 from stats_engine import (
     prob_victoria, prob_180s, quien_hace_mas_180s, handicaps_legs,
     legs_totales, prob_a_cuota, extraer_h2h_semanal, obtener_ultimos_partidos,
     _extraer_metricas_jugadores, simular_match,
+    pocos_partidos,
 )
 
 # El modulo de seguimiento de predicciones es OPCIONAL: si falta el archivo
@@ -37,6 +39,7 @@ try:
         tracking_disponible, diagnostico_conexion, verificar_resultados,
         listar_partidos_registrados, comprobar_partidos_anteriores,
         guardar_historico_semana, cargar_historico,
+        quitar_handicaps_duplicados, limpiar_predicciones,
     )
     _PREDICCIONES_OK = True
     _PREDICCIONES_ERROR = ""
@@ -53,6 +56,8 @@ except Exception as _e:
     comprobar_partidos_anteriores = None
     guardar_historico_semana = None
     cargar_historico = None
+    quitar_handicaps_duplicados = lambda df: df
+    limpiar_predicciones = lambda df: df
 
 def render_barras_enfrentadas(j1_nombre, j1_prob, j2_nombre, j2_prob, j1_color="#1f77b4", j2_color="#ff7f0e"):
     total = j1_prob + j2_prob
@@ -650,56 +655,61 @@ def selector_jornada(key_prefix, incluir_resumen=True,
         defecto_jornada = "Forma reciente"
         defecto_grupo = "Forma reciente"
     else:
-        defecto_jornada = "Grupo A Lunes"
-        defecto_grupo = "Grupo A"
+        # La jornada en juego o la ultima que ha empezado (no siempre el lunes)
+        try:
+            defecto_jornada = jornada_mas_reciente()
+        except Exception:
+            defecto_jornada = "Grupo A Lunes"
+        if defecto_jornada == "Final Sábado":
+            defecto_grupo = "Final"
+        else:
+            defecto_grupo = next((g for g, dias in grupos.items()
+                                  if defecto_jornada in dias), "Grupo A")
     if jornada_key not in st.session_state:
         st.session_state[jornada_key] = defecto_jornada
     if grupo_key not in st.session_state:
         st.session_state[grupo_key] = defecto_grupo
 
-    # Funcion interna que dibuja los botones de grupo/dia. Se reutiliza en
+    # Funcion interna que dibuja el selector de grupo/dia. Se reutiliza en
     # los dos modos; solo cambia si va dentro de un expander o no.
+    # Son dos barras de botones (segmented control) en vez de 3 filas de
+    # botones sueltos: en el movil los botones se apilaban uno debajo de
+    # otro y ocupaban una pantalla entera antes de ver ningun dato.
     def _dibujar_botones():
-        # Fila 1: grupos principales
-        cols1 = st.columns(3)
-        for i, g in enumerate(["Grupo A", "Grupo B", "Grupo C"]):
-            with cols1[i]:
-                tipo = "primary" if st.session_state[grupo_key] == g else "secondary"
-                if st.button(g, key=f"{key_prefix}_btn_{g}",
-                             use_container_width=True, type=tipo):
-                    st.session_state[grupo_key] = g
-                    st.session_state[jornada_key] = grupos[g][0]
-                    st.rerun()
-
-        # Fila 2: Final y opcionalmente Resumen Semanal
-        extras = ["Final"]
+        opciones_g = ["Grupo A", "Grupo B", "Grupo C", "Final"]
         if incluir_resumen:
-            extras.append("Resumen Semanal")
-        cols2 = st.columns(len(extras))
-        for i, b in enumerate(extras):
-            with cols2[i]:
-                tipo = "primary" if st.session_state[grupo_key] == b else "secondary"
-                etiqueta = "🏆 Final" if b == "Final" else "📊 Resumen Semanal"
-                if st.button(etiqueta, key=f"{key_prefix}_btn_{b}",
-                             use_container_width=True, type=tipo):
-                    st.session_state[grupo_key] = b
-                    st.session_state[jornada_key] = (
-                        "Final Sábado" if b == "Final" else "Resumen Semanal")
-                    st.rerun()
+            opciones_g.append("Resumen Semanal")
+        etiquetas_g = {"Final": "🏆 Final", "Resumen Semanal": "📊 Resumen"}
+        actual_g = st.session_state[grupo_key]
+        actual_g = actual_g if actual_g in opciones_g else None
+        # La key incluye el valor actual: si el estado cambia desde otro sitio
+        # (p. ej. el boton "Forma reciente"), el control se redibuja con el.
+        sel_g = st.segmented_control(
+            "Grupo", opciones_g, default=actual_g,
+            format_func=lambda g: etiquetas_g.get(g, g),
+            key=f"{key_prefix}_seg_grupo_{actual_g}",
+            label_visibility="collapsed")
+        if sel_g and sel_g != actual_g:
+            st.session_state[grupo_key] = sel_g
+            st.session_state[jornada_key] = (
+                grupos[sel_g][0] if sel_g in grupos
+                else "Final Sábado" if sel_g == "Final" else "Resumen Semanal")
+            st.rerun()
 
-        # Fila 3: dias del grupo activo (solo si es Grupo A/B/C)
+        # Dias del grupo activo (solo si es Grupo A/B/C)
         grupo_actual = st.session_state[grupo_key]
         if grupo_actual in grupos:
             dias = grupos[grupo_actual]
-            sub_cols = st.columns(len(dias))
-            for i, dia in enumerate(dias):
-                with sub_cols[i]:
-                    etiqueta = dia.replace(grupo_actual + " ", "")
-                    tipo = "primary" if st.session_state[jornada_key] == dia else "secondary"
-                    if st.button(etiqueta, key=f"{key_prefix}_btn_dia_{dia}",
-                                 use_container_width=True, type=tipo):
-                        st.session_state[jornada_key] = dia
-                        st.rerun()
+            actual_d = st.session_state[jornada_key]
+            actual_d = actual_d if actual_d in dias else None
+            sel_d = st.segmented_control(
+                "Día", dias, default=actual_d,
+                format_func=lambda d: d.replace(grupo_actual + " ", ""),
+                key=f"{key_prefix}_seg_dia_{actual_d}",
+                label_visibility="collapsed")
+            if sel_d and sel_d != actual_d:
+                st.session_state[jornada_key] = sel_d
+                st.rerun()
 
     # ── Modo Resultados: menu normal, siempre visible ────────────────────────
     if not modo_forma_reciente:
@@ -777,6 +787,8 @@ def render_value_bets():
         tiempo_transcurrido = (datetime.now() - st.session_state.last_update[fuente]).seconds
         st.info(f"📊 {len(nombres_disponibles)} jugadores | ⏱️ Actualizado hace {tiempo_transcurrido}s")
     st.markdown("### 🥊 Seleccionar Enfrentamiento")
+    st.caption("Pon como **Jugador 1** al que aparece primero en el cartel del "
+               "partido: el modelo le da la ventaja de empezar lanzando.")
 
     # ── Desplegable de próximos partidos ──────────────────────────────────────
     # Lista los 5 próximos partidos que aún no han empezado, leídos del CSV
@@ -935,11 +947,15 @@ def render_value_bets():
         # Boton pequeño para registrar este partido en el seguimiento del
         # modelo. Va justo debajo de Calcular. Antes de registrar, comprueba
         # que los jugadores no tengan partidos anteriores sin terminar.
-        if _PREDICCIONES_OK and registrar_predicciones is not None:
+        # Solo el administrador puede escribir en el Sheet de seguimiento.
+        if _PREDICCIONES_OK and registrar_predicciones is not None and es_admin():
 
             def _hacer_registro(jr1, jr2, j1_sel, j2_sel, fuente):
                 """Registra el partido y muestra el mensaje de resultado."""
-                semana_vb = datetime.now().strftime("Semana %Y-%m-%d")
+                # Mismo ID que auto_registrar: dia de jornada en hora de Madrid
+                # (antes se usaba la hora UTC del servidor y, cerca de la
+                # medianoche, el mismo partido acababa registrado dos veces).
+                semana_vb = f"Semana {fecha_jornada_madrid()}"
                 jornada_reg = fuente
                 if fuente == "Forma reciente":
                     jornada_reg = detectar_jornada_de_hoy() or fuente
@@ -1080,6 +1096,13 @@ def render_value_bets():
     pr1, pr2     = j1["PR"],       j2["PR"]
     lam1, lam2   = j1["lam_180"],  j2["lam_180"]
     legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
+    for _j in (j1, j2):
+        _n = pocos_partidos(_j)
+        if _n:
+            st.warning(
+                f"⚠️ {_j.get('nombre_original', '')} lleva solo {_n} "
+                f"{'partido' if _n == 1 else 'partidos'}: sus datos son poco "
+                f"fiables y las probabilidades de este partido también.")
     st.markdown("---")
     st.markdown("### 📊 Comparativa de Jugadores")
     
@@ -1322,6 +1345,10 @@ def render_value_bets():
     legs_total_dict = legs_totales(pr1, pr2)
     st.markdown("---")
     st.markdown("### 🎲 Mercados Disponibles")
+    st.caption(
+        f"🟢 value: la probabilidad del modelo supera la de la cuota en "
+        f"{MARGEN_VALUE*100:.0f} puntos o más · 🟡 yield positivo pero dentro "
+        f"del margen de error del modelo (no fiable) · ⚪ sin value · 🔴 negativo")
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🏆 Victoria", "🎯 180s", "🥇 ¿Quién hace más 180?", "📐 Hándicaps", "📊 Total Legs", "🔢 Resultado exacto"])
     with tab1:
         st.markdown("#### 🏆 Mercado de Victoria")
@@ -1336,9 +1363,9 @@ def render_value_bets():
             st.caption(f"{v1*100:.1f}% probabilidad")
             if c1 and c1 > 0:
                 y = calcular_yield(v1, c1)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c1)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c1):
                     value_bets_list.append({"Mercado": f"Gana {j1['nombre_original']}", "Probabilidad": v1, "Cuota Justa": cuota_justa, "Cuota Bookie": c1, "Yield": y})
         with col_v2:
             st.markdown(f"<p style='color: #ff7f0e; font-weight: bold;'>🎯 Gana {j2['nombre_original']}</p>", unsafe_allow_html=True)
@@ -1348,9 +1375,9 @@ def render_value_bets():
             st.caption(f"{v2*100:.1f}% probabilidad")
             if c2 and c2 > 0:
                 y = calcular_yield(v2, c2)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c2)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c2):
                     value_bets_list.append({"Mercado": f"Gana {j2['nombre_original']}", "Probabilidad": v2, "Cuota Justa": prob_a_cuota(v2), "Cuota Bookie": c2, "Yield": y})
     with tab2:
         st.markdown("#### 🎯 Mercado de 180s (Distribución Poisson)")
@@ -1364,9 +1391,9 @@ def render_value_bets():
             st.caption(f"{m180['J1 +0.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J1 +0.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +0.5 180s", "Probabilidad": m180["J1 +0.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_b:
             st.markdown("**+1.5 180s** (Al menos 2 180s)")
@@ -1376,9 +1403,9 @@ def render_value_bets():
             st.caption(f"{m180['J1 +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J1 +1.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +1.5 180s", "Probabilidad": m180["J1 +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         # Mercados negativos para J1
@@ -1392,9 +1419,9 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -0.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_d:
             st.markdown("**-1.5 180s** (Menos de 2 180s)")
@@ -1405,9 +1432,9 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         st.markdown("---")
@@ -1421,9 +1448,9 @@ def render_value_bets():
             st.caption(f"{m180['J2 +0.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J2 +0.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +0.5 180s", "Probabilidad": m180["J2 +0.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_b:
             st.markdown("**+1.5 180s** (Al menos 2 180s)")
@@ -1433,9 +1460,9 @@ def render_value_bets():
             st.caption(f"{m180['J2 +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J2 +1.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +1.5 180s", "Probabilidad": m180["J2 +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         # Mercados negativos para J2
@@ -1449,9 +1476,9 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -0.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_d:
             st.markdown("**-1.5 180s** (Menos de 2 180s)")
@@ -1462,67 +1489,67 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         st.markdown("---")
-        st.markdown("##### 🤝 Ambos Jugadores")
+        st.markdown("##### 🤝 Total del partido (180s entre los dos)")
         col_a, col_b = st.columns(2)
         with col_a:
-            st.markdown("**Ambos +1.5 180s**")
-            cuota_justa = prob_a_cuota(m180["Ambos +1.5"])
+            st.markdown("**Total +1.5 180s** (2 o más entre los dos)")
+            cuota_justa = prob_a_cuota(m180["Total +1.5"])
             mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_ambos_15", label_visibility="collapsed", placeholder="Introduce cuota")
-            st.caption(f"{m180['Ambos +1.5']*100:.1f}% probabilidad")
+            st.caption(f"{m180['Total +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
-                y = calcular_yield(m180["Ambos +1.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                y = calcular_yield(m180["Total +1.5"], c)
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
-                    value_bets_list.append({"Mercado": "Ambos +1.5 180s", "Probabilidad": m180["Ambos +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
+                if es_value(y, c):
+                    value_bets_list.append({"Mercado": "Total +1.5 180s", "Probabilidad": m180["Total +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_b:
-            st.markdown("**Ambos +2.5 180s**")
-            cuota_justa = prob_a_cuota(m180["Ambos +2.5"])
+            st.markdown("**Total +2.5 180s** (3 o más entre los dos)")
+            cuota_justa = prob_a_cuota(m180["Total +2.5"])
             mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_ambos_25", label_visibility="collapsed", placeholder="Introduce cuota")
-            st.caption(f"{m180['Ambos +2.5']*100:.1f}% probabilidad")
+            st.caption(f"{m180['Total +2.5']*100:.1f}% probabilidad")
             if c and c > 0:
-                y = calcular_yield(m180["Ambos +2.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                y = calcular_yield(m180["Total +2.5"], c)
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
-                    value_bets_list.append({"Mercado": "Ambos +2.5 180s", "Probabilidad": m180["Ambos +2.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
+                if es_value(y, c):
+                    value_bets_list.append({"Mercado": "Total +2.5 180s", "Probabilidad": m180["Total +2.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
-        # Mercados negativos para Ambos
+        # Mercados negativos del total
         col_c, col_d = st.columns(2)
         with col_c:
-            st.markdown("**Ambos -1.5 180s** (Menos de 2 180s cada uno)")
-            prob_neg = 1 - m180["Ambos +1.5"]
+            st.markdown("**Total -1.5 180s** (menos de 2 entre los dos)")
+            prob_neg = 1 - m180["Total +1.5"]
             cuota_justa = prob_a_cuota(prob_neg)
             mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_ambos_neg15", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
-                    value_bets_list.append({"Mercado": "Ambos -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
+                if es_value(y, c):
+                    value_bets_list.append({"Mercado": "Total -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_d:
-            st.markdown("**Ambos -2.5 180s** (Menos de 3 180s cada uno)")
-            prob_neg = 1 - m180["Ambos +2.5"]
+            st.markdown("**Total -2.5 180s** (menos de 3 entre los dos)")
+            prob_neg = 1 - m180["Total +2.5"]
             cuota_justa = prob_a_cuota(prob_neg)
             mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_ambos_neg25", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
-                    value_bets_list.append({"Mercado": "Ambos -2.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
+                if es_value(y, c):
+                    value_bets_list.append({"Mercado": "Total -2.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab3:
         st.markdown("#### 🥇 ¿Quién hace más 180s?")
         render_mas_180s_barras(j1['nombre_original'], p_j1_mas, j2['nombre_original'], p_j2_mas, p_emp, j1_color="#1f77b4", j2_color="#ff7f0e")
@@ -1536,9 +1563,9 @@ def render_value_bets():
             st.caption(f"{p_j1_mas*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_j1_mas, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"Más 180s: {j1['nombre_original']}", "Probabilidad": p_j1_mas, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_m2:
             st.markdown("**Empate**")
@@ -1548,9 +1575,9 @@ def render_value_bets():
             st.caption(f"{p_emp*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_emp, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": "Empate 180s", "Probabilidad": p_emp, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_m3:
             st.markdown(f"<p style='color: #ff7f0e; font-weight: bold;'>{j2['nombre_original']}</p>", unsafe_allow_html=True)
@@ -1560,9 +1587,9 @@ def render_value_bets():
             st.caption(f"{p_j2_mas*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_j2_mas, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"Más 180s: {j2['nombre_original']}", "Probabilidad": p_j2_mas, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab4:
         st.markdown("#### 🎯 Hándicaps de Legs")
@@ -1582,9 +1609,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_pos_j1_2:
@@ -1596,9 +1623,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         # Hándicaps Negativos J1
@@ -1613,9 +1640,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_neg_j1_2:
@@ -1627,9 +1654,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         st.divider()
@@ -1649,9 +1676,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_pos_j2_2:
@@ -1663,9 +1690,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         # Hándicaps Negativos J2
@@ -1680,9 +1707,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_neg_j2_2:
@@ -1694,9 +1721,9 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab5:
         st.markdown("#### 📊 Total Legs (First to 4)")
@@ -1711,9 +1738,9 @@ def render_value_bets():
             st.caption(f"{legs_total_dict['Más de 5.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(legs_total_dict["Más de 5.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": "Más de 5.5 Legs", "Probabilidad": legs_total_dict["Más de 5.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_l2:
             st.markdown("**Menos de 5.5 Legs**")
@@ -1723,9 +1750,9 @@ def render_value_bets():
             st.caption(f"{legs_total_dict['Menos de 5.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(legs_total_dict["Menos de 5.5"], c)
-                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                yield_color = icono_yield(y, c)
                 st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
-                if y > 0:
+                if es_value(y, c):
                     value_bets_list.append({"Mercado": "Menos de 5.5 Legs", "Probabilidad": legs_total_dict["Menos de 5.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab6:
         st.markdown("#### 🔢 Resultado exacto (First to 4)")
@@ -2264,7 +2291,7 @@ def render_tracking_predicciones(jugadores_resumen=None):
     )
 
     # Boton de diagnostico de la conexion con Google Sheets.
-    if st.button("🔧 Probar conexion con Google Sheets", key="trk_btn_diag"):
+    if es_admin() and st.button("🔧 Probar conexion con Google Sheets", key="trk_btn_diag"):
         with st.spinner("Probando conexion..."):
             if diagnostico_conexion is not None:
                 informe = diagnostico_conexion("")
@@ -2280,8 +2307,12 @@ def render_tracking_predicciones(jugadores_resumen=None):
             "prediccion se marca como **acierto (1)** o **fallo (0)**. Los "
             "partidos que aun no se hayan jugado quedan pendientes."
         )
-        if st.button("✅ Verificar resultados ahora", type="primary",
-                     key="trk_btn_verificar"):
+        if not es_admin():
+            st.caption("🔒 La verificación manual solo está disponible en "
+                       "modo administrador. Se hace sola cada 15 minutos "
+                       "durante las jornadas.")
+        elif st.button("✅ Verificar resultados ahora", type="primary",
+                       key="trk_btn_verificar"):
             with st.spinner("Comparando predicciones con los resultados "
                             "reales de las jornadas..."):
                 res_ver = verificar_resultados()
@@ -2338,7 +2369,8 @@ def render_tracking_predicciones(jugadores_resumen=None):
 
     metricas = calcular_metricas(df_pred)
 
-    total_reg = len(df_pred)
+    # Sin handicaps J2 duplicados, registros repetidos ni verificaciones a medias
+    total_reg = len(limpiar_predicciones(df_pred))
     evaluadas = metricas["evaluadas"]
     pendientes = metricas["pendientes"]
 
@@ -2561,7 +2593,10 @@ def render_historico(df_hist, jugadores_resumen=None):
             "para tener un registro que consultar en el futuro. Si ya "
             "guardaste esta semana, se sobrescribe con los datos actuales."
         )
-        if guardar_historico_semana is None:
+        if not es_admin():
+            st.caption("🔒 Solo disponible en modo administrador. El cierre "
+                       "semanal del domingo lo guarda automáticamente.")
+        elif guardar_historico_semana is None:
             st.info("La funcion de historico no esta disponible.")
         elif not jugadores_resumen:
             st.warning(

@@ -133,20 +133,6 @@ def calcular_tendencia(valor_actual, valor_semanal, etiqueta):
     else:
         return "", valor_actual, comparativa
 
-def verificar_alerta_excepcional(valor_actual, valor_semanal, etiqueta):
-    """Detecta mejoras excepcionales (>15%) para alertas"""
-    try:
-        val_act = float(str(valor_actual).replace('%', '').strip())
-        val_sem = float(str(valor_semanal).replace('%', '').strip())
-    except:
-        return False, 0
-    
-    if val_sem == 0:
-        return False, 0
-    
-    porcentaje_cambio = ((val_act - val_sem) / abs(val_sem)) * 100
-    es_excepcional = abs(porcentaje_cambio) > 15
-    return es_excepcional, porcentaje_cambio
 
 def safe_float(val, default=0.0):
     try:
@@ -219,6 +205,30 @@ def pct(p):
 def calcular_yield(prob, cuota_bookie):
     return (prob * cuota_bookie) - 1
 
+def es_value(y, cuota, margen=None):
+    """True si la apuesta es value con margen de seguridad.
+
+    y = prob * cuota - 1. Exigir prob >= 1/cuota + margen equivale a
+    y >= margen * cuota (a cuota alta hace falta mas yield, porque un error
+    de unos puntos en la probabilidad pesa mas).
+    """
+    from config import MARGEN_VALUE
+    m = MARGEN_VALUE if margen is None else margen
+    if y is None or not cuota:
+        return False
+    return y > 0 and y >= m * cuota
+
+
+def icono_yield(y, cuota):
+    """🟢 value con margen · 🟡 yield positivo pero dentro del margen
+    (no fiable) · ⚪ neutro · 🔴 claramente negativo."""
+    if es_value(y, cuota):
+        return "🟢"
+    if y > 0:
+        return "🟡"
+    return "🔴" if y < -0.05 else "⚪"
+
+
 def badge_yield(y):
     if y > 0:
         return f"✅ +{y*100:.1f}%"
@@ -232,6 +242,92 @@ def _buscar_stat(stats_dict, keywords):
         if any(kw in k.lower() for kw in keywords):
             return v
     return 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FECHAS DEL TORNEO (hora de Madrid)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def ahora_madrid():
+    """Fecha y hora actual en Europe/Madrid (el servidor de Streamlit Cloud y
+    GitHub Actions van en UTC)."""
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Madrid"))
+    except Exception:
+        return datetime.now()
+
+
+def fecha_jornada_madrid(ahora=None):
+    """Dia 'de jornada' en formato YYYY-MM-DD.
+
+    Es la fecha de Madrid, salvo de 00:00 a 03:00, que cuenta como el dia
+    anterior: la sesion nocturna del Grupo B (y el final del sabado) se
+    alarga pasada la medianoche. Asi un partido registrado a las 23:50 y
+    vuelto a registrar a las 00:10 mantiene el mismo ID y no se duplica.
+    """
+    from datetime import timedelta
+    ahora = ahora or ahora_madrid()
+    if ahora.hour * 60 + ahora.minute <= 3 * 60:
+        ahora = ahora - timedelta(days=1)
+    return ahora.strftime("%Y-%m-%d")
+
+
+def inicio_semana_torneo(ahora=None):
+    """Lunes a las 03:00 (Madrid) de la semana de torneo en curso. Lo que
+    ocurre antes pertenece a la semana anterior (el domingo de madrugada
+    aun se cierra la Final del sabado)."""
+    from datetime import timedelta
+    ahora = ahora or ahora_madrid()
+    lunes = (ahora - timedelta(days=ahora.weekday())).replace(
+        hour=3, minute=0, second=0, microsecond=0)
+    if ahora < lunes:
+        lunes -= timedelta(days=7)
+    return lunes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODO ADMINISTRADOR
+# ─────────────────────────────────────────────────────────────────────────────
+# Las acciones que escriben en el Google Sheet o lanzan el script (Registrar,
+# Verificar, Guardar historico, Ejecutar actualizacion) solo se muestran a
+# quien escriba la clave ADMIN_CLAVE de los secrets de Streamlit. Si el
+# secreto no esta configurado, todo sigue visible como antes.
+
+def clave_admin_configurada():
+    try:
+        return bool(st.secrets.get("ADMIN_CLAVE", ""))
+    except Exception:
+        return False
+
+
+def es_admin():
+    if not clave_admin_configurada():
+        return True
+    return bool(st.session_state.get("admin_ok", False))
+
+
+def render_acceso_admin():
+    """Casilla de clave en la barra lateral (solo si hay ADMIN_CLAVE)."""
+    if not clave_admin_configurada():
+        return
+    import hmac
+    if st.session_state.get("admin_ok"):
+        st.sidebar.caption("🔓 Modo administrador activo")
+        if st.sidebar.button("Salir del modo administrador", key="admin_salir"):
+            st.session_state["admin_ok"] = False
+            st.rerun()
+        return
+    clave = st.sidebar.text_input("🔒 Clave de administrador", type="password",
+                                  key="admin_clave_in")
+    if clave:
+        if hmac.compare_digest(clave, str(st.secrets.get("ADMIN_CLAVE", ""))):
+            st.session_state["admin_ok"] = True
+            st.rerun()
+        else:
+            st.sidebar.error("Clave incorrecta")
+
 
 def buscar_jugador(nombre, db):
     nombre_lower = nombre.strip().lower()

@@ -5,16 +5,16 @@ horario de jornada. Detecta los proximos partidos NO empezados y los
 registra en la pestana 'Predicciones', con datos lo mas frescos posibles.
 
 REGLAS DE FUNCIONAMIENTO:
-  1. Solo se ejecuta los dias mar/mie/vie/sab (lunes y jueves NO porque
-     son inicio de grupo, datos poco fiables).
-  2. Solo si hay una jornada activa por hora.
-  3. Detecta partidos terminados: alguien con 4 legs en alguna fila.
-  4. Detecta partidos en curso: hay algun dato en las filas pero ninguno
-     llega a 4 -> NO se registra.
-  5. Registra hasta 2 partidos "no empezados" (sin datos en ninguna fila).
-  6. Si los 2 siguientes no empezados comparten algun jugador, solo
-     se registra el primero.
-  7. Sobrescribe los registros si ya existian, sin tocar resultado/acierto.
+  1. Solo registra mar/mie/vie/sab (y dom de madrugada, cierre de la Final).
+     Lunes y jueves NO: son inicio de grupo, datos poco fiables.
+  2. Solo si hay una jornada activa por hora (el cron de GitHub ya solo
+     corre en esas franjas).
+  3. Partido terminado: alguien llega a 4 legs.
+  4. Partido en curso: hay algun dato pero nadie llega a 4 -> NO se registra.
+  5. Registra los partidos "no empezados" cuyos dos jugadores ya han
+     terminado todos sus partidos anteriores de la jornada.
+  6. Sobrescribe los registros si ya existian, sin tocar resultado/acierto.
+  7. En cada pasada verifica tambien las predicciones pendientes.
   8. Apunta en la pestana 'Log Auto Registro' lo que hizo cada vez.
 
 USO:
@@ -45,9 +45,6 @@ from zoneinfo import ZoneInfo
 
 # Dias que SI registramos (weekday: lun=0, mar=1, mie=2, jue=3, vie=4, sab=5)
 DIAS_REGISTRABLES = {1, 2, 4, 5, 6}  # mar, mie, vie, sab, dom (dom solo 00-03 Final)
-
-# Maximo de partidos a registrar por ejecucion
-MAX_PARTIDOS_POR_RONDA = 2
 
 # Fila de inicio de partidos en las pestanas de jornada (1-indexed)
 FILA_INICIO_PARTIDOS = 7
@@ -251,6 +248,32 @@ def seleccionar_partidos_a_registrar(partidos):
     return a_registrar, descartados
 
 
+def verificar_pendientes():
+    """Verifica las predicciones pendientes con los resultados ya jugados.
+
+    Se llama en TODAS las pasadas del cron (tambien cuando no hay nada que
+    registrar o la jornada ya ha terminado). Antes solo se verificaba si se
+    registraba algun partido, asi que los ultimos partidos de cada jornada
+    quedaban pendientes hasta el cierre del domingo.
+    Devuelve un texto corto para el log.
+    """
+    print("  -> Verificando resultados pendientes...")
+    try:
+        from predicciones import verificar_resultados
+        res_ver = verificar_resultados()
+        if res_ver.get("ok"):
+            txt = (f"Verificacion: verificadas={res_ver.get('verificadas', 0)} "
+                   f"aciertos={res_ver.get('aciertos', 0)} "
+                   f"fallos={res_ver.get('fallos', 0)} "
+                   f"pendientes={len(res_ver.get('pendientes_diag', {}))}")
+        else:
+            txt = f"Verificacion ERROR: {res_ver.get('error', 'desconocido')}"
+    except Exception as e:
+        txt = f"Verificacion EXCEPCION: {e}"
+    print(f"     {txt}")
+    return txt
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,7 +341,7 @@ def main():
         print(f"  -> {msg}")
         escribir_log_auto(
             jornada=jornada, partidos_registrados=[], partidos_saltados=[],
-            estado="NADA", detalles=msg,
+            estado="NADA", detalles=msg + " | " + verificar_pendientes(),
         )
         sys.exit(0)
 
@@ -326,7 +349,9 @@ def main():
         print("  -> no hay jornada activa por hora")
         escribir_log_auto(
             jornada="", partidos_registrados=[], partidos_saltados=[],
-            estado="NADA", detalles=f"sin jornada activa (h={h:02d}:{minuto:02d})",
+            estado="NADA",
+            detalles=(f"sin jornada activa (h={h:02d}:{minuto:02d}) | "
+                      + verificar_pendientes()),
         )
         sys.exit(0)
     print(f"  -> jornada activa: {jornada}")
@@ -376,7 +401,7 @@ def main():
         print(f"  -> {msg}")
         escribir_log_auto(jornada=jornada, partidos_registrados=[],
                            partidos_saltados=[], estado="NADA",
-                           detalles=msg)
+                           detalles=msg + " | " + verificar_pendientes())
         sys.exit(0)
 
     # ── Clasificar partidos por estado ────────────────────────────────────
@@ -393,7 +418,8 @@ def main():
         print("  -> no hay partidos pendientes que registrar")
         escribir_log_auto(jornada=jornada, partidos_registrados=[],
                            partidos_saltados=descartados, estado="NADA",
-                           detalles="sin partidos no-empezados pendientes")
+                           detalles="sin partidos no-empezados pendientes | "
+                                    + verificar_pendientes())
         sys.exit(0)
 
     # ── Cargar Forma reciente ─────────────────────────────────────────────
@@ -441,7 +467,9 @@ def main():
     # ── Registrar cada partido seleccionado ──────────────────────────────
     registrados_ok = []
     errores = []
-    semana = ahora.strftime("Semana %Y-%m-%d")
+    # Dia de jornada (madrugada = dia anterior), igual que el boton Registrar
+    from helpers import fecha_jornada_madrid
+    semana = f"Semana {fecha_jornada_madrid(ahora)}"
 
     def _buscar_jugador(nombre):
         nl = nombre.strip().lower()
@@ -497,26 +525,7 @@ def main():
     # los proximos partidos tambien verifica los que ya han terminado.
     # Asi las predicciones se van resolviendo automaticamente sin esperar
     # al cierre semanal del domingo.
-    print("  -> Verificando resultados pendientes...")
-    try:
-        from predicciones import verificar_resultados
-        res_ver = verificar_resultados()
-        if res_ver.get("ok"):
-            ver_str = (
-                f"verificadas={res_ver.get('verificadas', 0)} "
-                f"aciertos={res_ver.get('aciertos', 0)} "
-                f"fallos={res_ver.get('fallos', 0)} "
-                f"pendientes={len(res_ver.get('pendientes_diag', {}))}"
-            )
-            print(f"     {ver_str}")
-            detalles += f" | Verificacion: {ver_str}"
-        else:
-            err_ver = res_ver.get("error", "desconocido")
-            print(f"     Error verificando: {err_ver}")
-            detalles += f" | Verificacion ERROR: {err_ver}"
-    except Exception as e:
-        print(f"     Excepcion verificando: {e}")
-        detalles += f" | Verificacion EXCEPCION: {e}"
+    detalles += " | " + verificar_pendientes()
 
     escribir_log_auto(jornada=jornada, partidos_registrados=registrados_ok,
                        partidos_saltados=descartados + errores,

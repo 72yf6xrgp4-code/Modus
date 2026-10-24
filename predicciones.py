@@ -312,8 +312,9 @@ def calcular_mercados_partido(j1_data, j2_data):
         - prob:       probabilidad del modelo (0-1)
         - prediccion: texto legible de lo que predice el modelo
 
-    Son ~22 lineas por partido (ganador, 8 handicaps, 2 totales, 7 de
-    180s, y el H2H de 180s con 3 resultados).
+    Son 14 lineas por partido: ganador, 4 handicaps (los de J1; los de J2
+    son las mismas apuestas al reves), total de legs, 7 de 180s y el H2H
+    de 180s.
     """
     pr1 = j1_data.get("PR", 0.0)
     pr2 = j2_data.get("PR", 0.0)
@@ -340,11 +341,14 @@ def calcular_mercados_partido(j1_data, j2_data):
         "prediccion": favorito_ganador,
     })
 
-    # 2) Handicaps de legs (8 lineas).
-    #    Aqui SI son 8 apuestas distintas (J1 -1.5, J1 -2.5, J2 +1.5...),
-    #    no redundantes: cada hándicap es un mercado propio.
+    # 2) Handicaps de legs (4 lineas).
+    #    Las lineas de J2 son las mismas apuestas que las de J1 al reves
+    #    (J2 +1.5 = NO J1 -1.5, J2 -2.5 = NO J1 +2.5...): registrarlas todas
+    #    contaba cada resultado dos veces. Solo se guardan las de J1.
     handicaps = handicaps_legs(pr1, pr2)
     for linea, prob in handicaps.items():
+        if linea.startswith("J2"):
+            continue
         filas.append({
             "mercado": "Handicap legs",
             "linea": linea,
@@ -370,7 +374,7 @@ def calcular_mercados_partido(j1_data, j2_data):
     })
 
     # 4) Mercados de 180s (7 lineas).
-    #    Son 7 apuestas distintas (J1 +0.5, Ambos +2.5...), no redundantes.
+    #    Son 7 apuestas distintas (J1 +0.5, Total +2.5...), no redundantes.
     mercados_180 = prob_180s(lam1, lam2, pr1, pr2)
     for linea, prob in mercados_180.items():
         filas.append({
@@ -568,6 +572,58 @@ def cargar_predicciones(url_sheet):
         return pd.DataFrame()
 
 
+def quitar_handicaps_duplicados(df):
+    """Quita las lineas de handicap de J2 registradas antes del cambio.
+
+    'J2 +1.5' es exactamente la apuesta contraria a 'J1 -1.5' (y lo mismo
+    con las otras tres parejas): acierta cuando la otra acierta y falla
+    cuando falla. Contar las dos duplicaba los handicaps en las metricas.
+    """
+    if df is None or df.empty or "Mercado" not in df.columns or "Linea" not in df.columns:
+        return df
+    dup = ((df["Mercado"].astype(str).str.strip() == "Handicap legs")
+           & df["Linea"].astype(str).str.strip().str.upper().str.startswith("J2"))
+    return df[~dup].copy()
+
+
+def limpiar_predicciones(df):
+    """Deja solo las predicciones que cuentan para las metricas.
+
+    - Quita las lineas de handicap de J2 (duplican las de J1).
+    - Quita las verificadas con un marcador a medias ("3-1", "3-3"...): se
+      verificaron con el partido aun en juego (fallo ya corregido), asi que
+      su acierto no vale.
+    - Si el mismo partido se registro dos veces el mismo dia de jornada
+      (con otro ID por la diferencia UTC/Madrid, ya corregida), se queda
+      solo el ultimo registro.
+    """
+    df = quitar_handicaps_duplicados(df)
+    if df is None or df.empty:
+        return df
+    if "Resultado real" in df.columns:
+        res = df["Resultado real"].astype(str).str.strip()
+        partes = res.str.extract(r"^(\d+)\s*-\s*(\d+)$")
+        con_marcador = partes[0].notna()
+        terminado = (partes[0].astype(float).fillna(0).clip(lower=0).combine(
+            partes[1].astype(float).fillna(0), max) >= 4)
+        df = df[~(con_marcador & ~terminado)].copy()
+    cols = ["Jugador 1", "Jugador 2", "Mercado", "Linea", "Fecha registro"]
+    if all(c in df.columns for c in cols) and not df.empty:
+        fecha = pd.to_datetime(df["Fecha registro"].astype(str), errors="coerce")
+        df = df.assign(_dia=(fecha - pd.Timedelta(hours=3)).dt.strftime("%Y-%m-%d"),
+                       _orden=fecha)
+        clave = [df["Jugador 1"].astype(str).str.lower().str.strip(),
+                 df["Jugador 2"].astype(str).str.lower().str.strip(),
+                 df["Mercado"].astype(str).str.strip(),
+                 df["Linea"].astype(str).str.strip(), df["_dia"]]
+        df = df.assign(_k=pd.Series(list(zip(*clave)), index=df.index))
+        df = (df.sort_values("_orden", kind="stable")
+                .drop_duplicates("_k", keep="last")
+                .sort_index()
+                .drop(columns=["_dia", "_orden", "_k"]))
+    return df
+
+
 def calcular_metricas(df):
     """Calcula las metricas de calidad del modelo a partir del DataFrame de
     predicciones. Solo usa las filas que tienen 'Acierto' relleno (es decir,
@@ -602,7 +658,9 @@ def calcular_metricas(df):
             return 0
         return None  # vacio / desconocido -> pendiente
 
-    df = df.copy()
+    df = limpiar_predicciones(df)
+    if df is None or df.empty:
+        return vacio
     df["_acierto"] = df["Acierto"].apply(_norm_acierto)
 
     # Separar las dos categorias
@@ -975,6 +1033,13 @@ def _extraer_partidos_jugados(jornada):
         if legs1 is None or legs2 is None:
             i += 1
             continue
+        # Y tiene que haber TERMINADO (alguien llega a 4 legs, Bo7). Si no,
+        # es un partido en curso: el Sheet ya trae el marcador parcial y,
+        # antes, se verificaba con ese 2-1 y el resultado quedaba fijado
+        # para siempre. Se salta el par y se verificara cuando acabe.
+        if max(legs1, legs2) < 4:
+            i += 2
+            continue
         partidos.append({
             "j1": nombre1, "j2": nombre2,
             "legs1": legs1, "legs2": legs2,
@@ -1316,9 +1381,9 @@ def _verificar_mercado(mercado, linea, prediccion, legs_a, legs_b,
             se_cumple = t180_b >= 2
         elif l.startswith("ambos +0.5"):
             se_cumple = (t180_a >= 1) and (t180_b >= 1)
-        elif l.startswith("ambos +1.5"):
-            se_cumple = (t180_a + t180_b) >= 2
-        elif l.startswith("ambos +2.5"):
+        elif l.startswith("ambos +1.5") or l.startswith("total +1.5"):
+            se_cumple = (t180_a + t180_b) >= 2     # 180s sumados
+        elif l.startswith("ambos +2.5") or l.startswith("total +2.5"):
             se_cumple = (t180_a + t180_b) >= 3
         else:
             return None
@@ -1398,6 +1463,16 @@ def verificar_resultados(url_sheet=None):
     # los 18 mercados del mismo partido).
     pendientes_diag = {}  # {clave: motivo}
 
+    # Las pestanas de jornada solo tienen los partidos de ESTA semana (se
+    # limpian el lunes). Una prediccion pendiente de una semana anterior no
+    # se puede verificar ya, y compararla con la semana actual daria un
+    # resultado falso si los mismos jugadores vuelven a enfrentarse.
+    try:
+        from helpers import inicio_semana_torneo
+        inicio_semana = inicio_semana_torneo().strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        inicio_semana = None
+
     for idx, reg in enumerate(registros):
         fila_hoja = idx + 2   # +1 cabecera, +1 base-1
 
@@ -1405,6 +1480,15 @@ def verificar_resultados(url_sheet=None):
         acierto_actual = str(reg.get("Acierto", "")).strip()
         if acierto_actual != "":
             sin_cambios += 1
+            continue
+
+        fecha_reg = str(reg.get("Fecha registro", "")).strip()
+        if inicio_semana and fecha_reg and fecha_reg < inicio_semana:
+            clave_vieja = (f"{reg.get('Jornada', '')}|{reg.get('Jugador 1', '')} "
+                           f"vs {reg.get('Jugador 2', '')}")
+            pendientes_diag[clave_vieja] = (
+                f"Registrada el {fecha_reg}, de una semana anterior: ya no "
+                f"se puede verificar con las pestanas actuales")
             continue
 
         jornada = str(reg.get("Jornada", "")).strip()

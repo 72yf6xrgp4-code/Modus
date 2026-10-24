@@ -14,10 +14,30 @@ import numpy as np
 from scipy.stats import poisson
 from functools import lru_cache
 
-from config import ELO_S, ELO_B, LEGS_PROMEDIO_REFERENCIA, URLS, CORTES
+from config import (ELO_S, ELO_B, LEGS_PROMEDIO_REFERENCIA, URLS, CORTES,
+                    MUESTRA_MIN_PARTIDOS, LAMBDA_180_PESO_JUGADOR,
+                    LAMBDA_180_MEDIA_TORNEO)
 from helpers import sanitize_prob, safe_float, _buscar_stat
 from data_loading import cargar_todo
 
+
+
+def pocos_partidos(jugador, n_min=None):
+    """Numero de partidos si el jugador tiene menos de MUESTRA_MIN_PARTIDOS
+    (para avisar de que sus datos son poco fiables); None si no hace falta
+    avisar o no se sabe. No modifica ningun calculo."""
+    n_min = MUESTRA_MIN_PARTIDOS if n_min is None else n_min
+    n = jugador.get("n_partidos")
+    if n_min and isinstance(n, (int, float)) and 0 < n < n_min:
+        return int(n)
+    return None
+
+
+def lambda_180_calibrada(lam):
+    """Media de 180s por partido que usa el modelo para un jugador: su dato
+    de la semana acercado a la media del torneo (ver config.py)."""
+    w = LAMBDA_180_PESO_JUGADOR
+    return w * max(lam or 0.0, 0.0) + (1.0 - w) * LAMBDA_180_MEDIA_TORNEO
 
 
 def prob_leg(pg1, pg2, j1_saca, S=ELO_S, B=ELO_B):
@@ -88,12 +108,15 @@ def prob_victoria(pr1, pr2, j1_saca_primero=True):
     return sanitize_prob(p1), sanitize_prob(1.0 - p1)
 
 def prob_180s(lam1, lam2, pr1=None, pr2=None, j1_saca_primero=True):
-    """Mercados de 180s con Poisson. Si se pasan pr1, pr2 (PG de los jugadores),
+    """Mercados de 180s con Poisson. lam1/lam2 son la media de 180s por partido
+    de cada jugador; antes de usarla se acerca a la media del torneo
+    (lambda_180_calibrada). Si se pasan pr1, pr2 (PG de los jugadores),
     ajusta lambda multiplicando por (E[legs del partido] / LEGS_PROMEDIO_REFERENCIA)
     para que partidos más reñidos generen proporcionalmente más 180s.
 
     Si solo se pasan lam1, lam2, no aplica ajuste (lambda = T directamente).
     """
+    lam1, lam2 = lambda_180_calibrada(lam1), lambda_180_calibrada(lam2)
     factor = 1.0
     if pr1 is not None and pr2 is not None and pr1 > 0 and pr2 > 0:
         finales = simular_match(pr1, pr2, j1_saca_primero)
@@ -114,9 +137,12 @@ def prob_180s(lam1, lam2, pr1=None, pr2=None, j1_saca_primero=True):
         "J1 +1.5": sanitize_prob(1 - poisson.cdf(1, lam1_aj)),
         "J2 +0.5": sanitize_prob(1 - poisson.cdf(0, lam2_aj)),
         "J2 +1.5": sanitize_prob(1 - poisson.cdf(1, lam2_aj)),
+        # "Ambos +0.5" = los DOS jugadores hacen al menos un 180.
+        # "Total +1.5/+2.5" = 180s sumados entre los dos (antes se llamaban
+        # "Ambos +1.5/+2.5", pero no exigen nada a cada jugador por separado).
         "Ambos +0.5": ambos_05,
-        "Ambos +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
-        "Ambos +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
+        "Total +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
+        "Total +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
     }
 
 def quien_hace_mas_180s(lam1, lam2, pr1=None, pr2=None, j1_saca_primero=True, k_max=15):
@@ -130,6 +156,7 @@ def quien_hace_mas_180s(lam1, lam2, pr1=None, pr2=None, j1_saca_primero=True, k_
 
     k_max=15 cubre cómodamente los rangos típicos (lam ≈ 1-3, P(>15) < 1e-8).
     """
+    lam1, lam2 = lambda_180_calibrada(lam1), lambda_180_calibrada(lam2)
     factor = 1.0
     if pr1 is not None and pr2 is not None and pr1 > 0 and pr2 > 0:
         finales = simular_match(pr1, pr2, j1_saca_primero)

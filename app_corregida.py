@@ -20,6 +20,7 @@ import pandas as pd
 import numpy as np
 import requests
 import time
+import html as html_mod
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
@@ -47,7 +48,7 @@ st.markdown("""
 # ---- Imports de los modulos de la app ----
 from config import URLS, CORTES
 from data_loading import cargar_todo, get_jornada_actual, get_proxima_jornada
-from helpers import pintar_partidos
+from helpers import pintar_partidos, es_admin, render_acceso_admin
 from rendering import (
     render_jugador_visual, render_value_bets, render_small_multiples,
     selector_jornada, render_tracking_predicciones, render_historico,
@@ -98,16 +99,26 @@ except Exception:
 
 st.sidebar.markdown("---")
 
-# ── Menu de secciones (radio unico, fiable) ──────────────────────────────
-# Los emojis ya dan pista del tipo: 🔴💰📊 son del dia a dia,
-# 📈📚 son de analisis tranquilo. Antes lo separabamos en dos radios pero
-# eso producia un bug intermitente al cambiar de seccion.
-opcion_principal = st.sidebar.radio(
-    "Selecciona sección:",
-    ["🔴 LIVE", "💰 VALUE BETS", "📊 RESULTADOS Y ESTADÍSTICAS",
-     "📈 SEGUIMIENTO", "📚 HISTÓRICO"],
+# ── Menu de secciones: barra de botones arriba del todo ──────────────────
+# Antes era un radio en la barra lateral: en el movil la barra tapaba la
+# pagina y habia que cerrarla a mano cada vez. Ahora el menu va en la
+# pagina, siempre visible. La barra lateral queda para el estado de la
+# jornada, el refresco y el modo administrador.
+SECCIONES = ["🔴 LIVE", "💰 VALUE BETS", "📊 RESULTADOS Y ESTADÍSTICAS",
+             "📈 SEGUIMIENTO", "📚 HISTÓRICO"]
+_CORTAS = {"🔴 LIVE": "🔴 Live", "💰 VALUE BETS": "💰 Value Bets",
+           "📊 RESULTADOS Y ESTADÍSTICAS": "📊 Resultados",
+           "📈 SEGUIMIENTO": "📈 Seguimiento", "📚 HISTÓRICO": "📚 Histórico"}
+if st.session_state.get("seccion") not in SECCIONES:
+    st.session_state["seccion"] = st.session_state.get("_ultima_seccion", SECCIONES[0])
+opcion_principal = st.segmented_control(
+    "Sección", SECCIONES, format_func=_CORTAS.get, key="seccion",
     label_visibility="collapsed",
 )
+# Pulsar la seccion ya activa la deselecciona: nos quedamos en la misma
+if not opcion_principal:
+    opcion_principal = st.session_state.get("_ultima_seccion", SECCIONES[0])
+st.session_state["_ultima_seccion"] = opcion_principal
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔄 Actualización")
@@ -119,11 +130,13 @@ if st.sidebar.button("♻️ Forzar Refresh", help="Recarga inmediata"):
     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚙️ Ejecutar Script")
+render_acceso_admin()
 
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyF0-GxHiaX4NW55-2UJt39a9V_aJhGXahq5NL5z2szpbFd7RdtKtr5ww7r852RAm2f/exec"
 
-if st.sidebar.button("▶️ Ejecutar Actualización", help="Ejecuta el script de actualización de datos"):
+if es_admin():
+    st.sidebar.markdown("### ⚙️ Ejecutar Script")
+if es_admin() and st.sidebar.button("▶️ Ejecutar Actualización", help="Ejecuta el script de actualización de datos"):
     with st.sidebar.spinner("🔄 Ejecutando script..."):
         try:
             # Intentar con GET primero (más compatible con Apps Script)
@@ -481,8 +494,8 @@ elif "📚 HISTÓRICO" in opcion_principal:
                 f"<span style='font-size:20px;'>{medalla}</span>"
                 f"<span style='font-size:13px;color:#94a3b8;min-width:110px;'>"
                 f"{c['fecha']}</span>"
-                f"<span style='font-size:16px;font-weight:700;'>"
-                f"{c['campeon']}</span>"
+                f"<span style='font-size:16px;font-weight:700;color:#0f172a;'>"
+                f"{html_mod.escape(str(c['campeon']))}</span>"
                 f"</div>"
             )
         html = (

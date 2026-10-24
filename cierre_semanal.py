@@ -147,11 +147,12 @@ def main():
         else:
             res_hist = guardar_historico_semana(resumen)
             if res_hist.get("ok"):
+                # guardar_historico_semana devuelve 'guardados' y 'sobrescrita'
+                # (el log antes leia claves que no existen y siempre ponia 0)
                 msg_hist = (
-                    f"Historico guardado: "
-                    f"nuevas={res_hist.get('nuevas', 0)}, "
-                    f"actualizadas={res_hist.get('actualizadas', 0)}, "
-                    f"total={res_hist.get('total', 0)}"
+                    f"Historico guardado: semana {res_hist.get('fecha', '?')}, "
+                    f"{res_hist.get('guardados', 0)} jugadores"
+                    f"{' (sobrescrita)' if res_hist.get('sobrescrita') else ''}"
                 )
                 print(f"     {msg_hist}")
                 detalles_total.append(msg_hist)

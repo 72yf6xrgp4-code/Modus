@@ -2,8 +2,7 @@
 data_loading.py - Carga y parsing de las hojas de calculo de Google Sheets.
 
 Funciones para leer cada pestana del spreadsheet (jornadas diarias, Resumen
-Semanal, Value Bets), extraer las estadisticas de cada jugador y consultar
-la API de partidos en vivo.
+Semanal, Value Bets) y extraer las estadisticas de cada jugador.
 
 Depende de: config (URLS, CORTES) y helpers (safe_float, _buscar_stat).
 """
@@ -247,7 +246,7 @@ def extraer_stats_resumen_semanal(df):
         st.error(f"Error extrayendo Resumen Semanal: {e}")
         return {}
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=30, show_spinner="Cargando datos del Sheet...")
 def cargar_jugadores_desde(pestana: str):
     try:
         url = URLS.get(pestana, "")
@@ -560,7 +559,32 @@ def proxima_jornada():
     dias_falta = (7 - wd_hoy) + 0
     dia_inicio = ahora + timedelta(days=dias_falta)
     etiqueta_dia = f"Lunes {dia_inicio.strftime('%d/%m')}"
-    return "Grupo A Lunes", "10:00", etiqueta_dia
+    return "Grupo A Lunes", "10:30", etiqueta_dia
+
+
+def jornada_mas_reciente():
+    """Jornada que esta en juego o, si no hay ninguna, la ultima que ha
+    empezado esta semana (hora de Madrid). Sirve de seleccion por defecto en
+    Resultados: un sabado por la manana interesa el Grupo B del viernes, no
+    el lunes. Antes del primer partido del lunes devuelve 'Grupo A Lunes'.
+    """
+    activa = detectar_jornada_de_hoy(exigir_datos=False)
+    if activa:
+        return activa
+    try:
+        from zoneinfo import ZoneInfo
+        ahora = datetime.now(ZoneInfo("Europe/Madrid"))
+    except Exception:
+        ahora = datetime.now()
+    INICIOS = [
+        (0, 10, 30, "Grupo A Lunes"), (1, 10, 30, "Grupo A Martes"),
+        (2, 10, 30, "Grupo A Miércoles"), (3, 14, 0, "Grupo C Jueves"),
+        (3, 21, 0, "Grupo B Jueves"), (4, 14, 0, "Grupo C Viernes"),
+        (4, 21, 0, "Grupo B Viernes"), (5, 20, 40, "Final Sábado"),
+    ]
+    actual = (ahora.weekday(), ahora.hour, ahora.minute)
+    empezadas = [n for (wd, h, mi, n) in INICIOS if (wd, h, mi) <= actual]
+    return empezadas[-1] if empezadas else "Grupo A Lunes"
 
 
 def estado_jornada_sidebar():
@@ -719,7 +743,7 @@ def cargar_forma_reciente():
     return combinado
 
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=30, show_spinner="Cargando datos del Sheet...")
 def cargar_todo(url, opcion, cortes):
     try:
         df = pd.read_csv(url, header=None)
@@ -762,247 +786,6 @@ def cargar_todo(url, opcion, cortes):
     except Exception as e:
         st.error(f"Error cargando {opcion}: {e}")
         return None, None
-
-@st.cache_data(ttl=10)
-def obtener_partidos_vivos_api():
-    try:
-        base_url = "https://api-igamedc.igamemedia.com/api/mss-web"
-        response = requests.get(f"{base_url}/results-fixtures", timeout=5)
-        if response.status_code != 200:
-            return None
-        data = response.json()
-        week_activa = data.get("selected", {}).get("week", "")
-        grupos = data.get("selected", {}).get("groups", [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 8}])
-        partidos_vivos = []
-        for grupo in grupos:
-            url = f"{base_url}/results-fixtures?group={grupo['id']}"
-            if week_activa:
-                url += f"&week={week_activa}"
-            try:
-                resp = requests.get(url, timeout=5)
-                if resp.status_code == 200:
-                    fixtures = resp.json().get("Fixtures", resp.json().get("fixtures", []))
-                    for fixture in fixtures:
-                        if fixture.get("status", "").lower() != "not started":
-                            fixture_id = fixture.get("gameId") or fixture.get("Id") or fixture.get("id")
-                            if fixture_id:
-                                try:
-                                    detail_resp = requests.get(f"{base_url}/fixtures/{fixture_id}", timeout=5)
-                                    if detail_resp.status_code == 200:
-                                        detail = detail_resp.json()
-                                        stats = detail.get("playersStatistics", {}).get("statistics", [])
-                                        if stats and len(stats) >= 2:
-                                            partidos_vivos.append({
-                                                "id": fixture_id,
-                                                "fecha": fixture.get("fixture", ""),
-                                                "j1": fixture.get("playerHome", ""),
-                                                "j2": fixture.get("playerAway", ""),
-                                                "score_j1": fixture.get("scorePlayerHome", ""),
-                                                "score_j2": fixture.get("scorePlayerAway", ""),
-                                                "j1_average": stats[0].get("average", ""),
-                                                "j2_average": stats[1].get("average", ""),
-                                                "j1_180s": stats[0].get("turns180", ""),
-                                                "j2_180s": stats[1].get("turns180", ""),
-                                                "j1_checkout": stats[0].get("checkoutPercentage", ""),
-                                                "j2_checkout": stats[1].get("checkoutPercentage", "")
-                                            })
-                                except:
-                                    pass
-            except:
-                continue
-        return partidos_vivos if partidos_vivos else None
-    except Exception as e:
-        st.warning(f"⚠️ Error obteniendo datos de MODUS: {e}")
-        return None
-
-
-def _limpiar_nombre_jugador(nombre):
-    """Limpia el nombre de un jugador devuelto por la API.
-
-    La API puede añadir información extra al nombre: códigos de país entre
-    paréntesis "(ENG)", rankings numéricos "1. ", siglas entre corchetes,
-    espacios sobrantes, etc. Esta función deja únicamente el nombre limpio.
-
-    Ejemplos:
-        "George Killington (ENG)" -> "George Killington"
-        "1. Richie Howson"        -> "Richie Howson"
-        "  Arne  Spee  "          -> "Arne Spee"
-    """
-    if not nombre:
-        return ""
-    texto = str(nombre)
-    # Quitar lo que vaya entre paréntesis o corchetes (país, ranking, etc.)
-    texto = re.sub(r"\([^)]*\)", "", texto)
-    texto = re.sub(r"\[[^\]]*\]", "", texto)
-    # Quitar un prefijo de ranking tipo "12. " o "3) " al principio
-    texto = re.sub(r"^\s*\d+\s*[.)\-]\s*", "", texto)
-    # Colapsar espacios múltiples y recortar
-    texto = re.sub(r"\s+", " ", texto).strip()
-    return texto
-
-
-@st.cache_data(ttl=60)
-def obtener_proximos_partidos_api(limite=3):
-    """Devuelve los próximos partidos que aún NO han empezado.
-
-    CRITERIO DE "NO EMPEZADO" (importante):
-    No nos fiamos del campo 'status' de la API porque resulta poco fiable.
-    En su lugar aplicamos la regla observada en la pestaña Live: un partido
-    NO ha empezado cuando en sus datos SOLO aparecen los nombres de los dos
-    jugadores y NINGÚN dato de juego. Si el fixture tiene marcador, legs,
-    estadísticas, ganador, o cualquier otro dato de actividad, significa que
-    el partido ya ha comenzado (o terminado) y se descarta.
-
-    Solo interesan los nombres de los dos jugadores, para autocompletar el
-    selector de Value Bets.
-
-    DEVUELVE UN DICT con dos claves:
-        - "partidos": lista de dicts {id, j1, j2, fecha, etiqueta}
-        - "diagnostico": string explicando qué pasó si la lista sale vacía.
-    """
-    base_url = "https://api-igamedc.igamemedia.com/api/mss-web"
-
-    # Campos del fixture que, si tienen un valor "real", indican que el
-    # partido YA tiene actividad (ha empezado o terminado).
-    CAMPOS_DE_JUEGO = (
-        "scorePlayerHome", "scorePlayerAway", "scoreHome", "scoreAway",
-        "legsPlayerHome", "legsPlayerAway", "legsHome", "legsAway",
-        "winner", "winnerId", "result", "playersStatistics", "statistics",
-        "average", "averageHome", "averageAway",
-        "turns180", "turns180Home", "turns180Away",
-        "checkoutPercentage", "currentLeg", "currentSet", "sets",
-    )
-
-    def _tiene_dato_de_juego(fixture):
-        """True si el fixture contiene algún dato que indique que el partido
-        ya tiene actividad. Un valor cuenta como "real" si no está vacío,
-        no es None, y no es un cero/cero-string (un 0-0 inicial no cuenta
-        como partido empezado)."""
-        for campo in CAMPOS_DE_JUEGO:
-            if campo not in fixture:
-                continue
-            val = fixture.get(campo)
-            if val is None:
-                continue
-            # Listas/dicts no vacíos = hay estadísticas → partido con actividad
-            if isinstance(val, (list, dict)):
-                if len(val) > 0:
-                    return True
-                continue
-            # Valores escalares: vacío o cero no cuentan como actividad
-            texto = str(val).strip().lower()
-            if texto in ("", "none", "null", "-", "0", "0.0", "0,0",
-                         "0-0", "00:00"):
-                continue
-            return True
-        return False
-
-    # Paso 1: petición raíz para saber semana y grupos activos
-    try:
-        response = requests.get(f"{base_url}/results-fixtures", timeout=8)
-    except Exception as e:
-        return {"partidos": [],
-                "diagnostico": f"No se pudo conectar con la API de MODUS ({type(e).__name__})."}
-
-    if response.status_code != 200:
-        return {"partidos": [],
-                "diagnostico": f"La API de MODUS respondió con código {response.status_code}."}
-
-    try:
-        data = response.json()
-    except Exception:
-        return {"partidos": [],
-                "diagnostico": "La API de MODUS no devolvió un JSON válido."}
-
-    week_activa = data.get("selected", {}).get("week", "")
-    grupos = data.get("selected", {}).get("groups",
-                                          [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 8}])
-
-    proximos = []
-    vistos = set()        # evita duplicados si un fixture aparece en varios grupos
-    total_fixtures = 0    # cuántos fixtures vimos en total
-    ya_empezados = 0      # cuántos descartamos por tener datos de juego
-
-    for grupo in grupos:
-        url = f"{base_url}/results-fixtures?group={grupo.get('id')}"
-        if week_activa:
-            url += f"&week={week_activa}"
-        try:
-            resp = requests.get(url, timeout=8)
-            if resp.status_code != 200:
-                continue
-            cuerpo = resp.json()
-            fixtures = cuerpo.get("Fixtures", cuerpo.get("fixtures", []))
-            for fixture in fixtures:
-                total_fixtures += 1
-                j1 = _limpiar_nombre_jugador(fixture.get("playerHome", ""))
-                j2 = _limpiar_nombre_jugador(fixture.get("playerAway", ""))
-                # Sin los dos nombres no es un enfrentamiento utilizable
-                if not j1 or not j2:
-                    continue
-                # CRITERIO CLAVE: si tiene datos de juego, ya empezó → descartar
-                if _tiene_dato_de_juego(fixture):
-                    ya_empezados += 1
-                    continue
-                fixture_id = (fixture.get("gameId") or fixture.get("Id")
-                              or fixture.get("id") or f"{j1}-{j2}")
-                if fixture_id in vistos:
-                    continue
-                vistos.add(fixture_id)
-                # La fecha se usa SOLO para ordenar cronológicamente; no se
-                # muestra al usuario. Probamos varios nombres de campo.
-                fecha = ""
-                for campo in ("fixture", "date", "startDate", "startTime",
-                              "scheduledTime", "kickoff", "Date", "dateTime"):
-                    val = fixture.get(campo, "")
-                    if val:
-                        fecha = str(val)
-                        break
-                proximos.append({
-                    "id": fixture_id,
-                    "j1": j1,
-                    "j2": j2,
-                    "fecha": fecha,
-                    "_sort": fecha or "zzzz",
-                })
-        except Exception:
-            continue
-
-    # Ordenar segun el ORDEN DE JUEGO REAL del CSV de la jornada activa.
-    # La API devuelve los fixtures desordenados y a menudo sin fecha fiable,
-    # asi que cruzamos con el CSV (que respeta el orden real de juego).
-    orden_csv = cargar_orden_partidos_jornada_activa()
-    if orden_csv:
-        proximos.sort(key=lambda p: _indice_orden_partido(
-            p["j1"], p["j2"], orden_csv))
-    else:
-        # Fallback: si no hay CSV, ordenar por fecha como antes.
-        proximos.sort(key=lambda p: p["_sort"])
-
-    # Construir resultado: etiqueta SOLO con nombres "J1 vs J2"
-    resultado = []
-    for p in proximos[:limite]:
-        resultado.append({
-            "id": p["id"],
-            "j1": p["j1"],
-            "j2": p["j2"],
-            "fecha": p["fecha"],
-            "etiqueta": f"{p['j1']} vs {p['j2']}",
-        })
-
-    # Diagnóstico para el caso de lista vacía
-    if resultado:
-        diag = ""
-    elif total_fixtures == 0:
-        diag = "La API de MODUS respondió pero no devolvió ningún partido."
-    elif ya_empezados == total_fixtures:
-        diag = ("Todos los partidos de esta semana ya han empezado o "
-                "terminado. Aún no hay próximos enfrentamientos publicados.")
-    else:
-        diag = ("No se encontraron próximos partidos pendientes. "
-                "Es posible que los enfrentamientos aún no estén publicados.")
-
-    return {"partidos": resultado, "diagnostico": diag}
 
 
 def get_jornada_actual():
@@ -1095,7 +878,7 @@ def cargar_historial_semana(nombre_jugador: str) -> list:
             nombre1 = fila1[0].strip() if len(fila1) > 0 else ""
             nombre2 = fila2[0].strip() if len(fila2) > 0 else ""
             if not nombre1 or not nombre2:
-                break  # no hay mas partidos
+                continue  # hueco (nombres aun sin cargar): seguir buscando
 
             # ¿Aparece nuestro jugador en alguna de las dos filas?
             norm1 = _normalizar_nombre_hist(nombre1)
@@ -1163,62 +946,6 @@ def calcular_racha(resultados: list) -> tuple:
     return racha, ("W" if ultimo else "L")
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def cargar_orden_partidos_jornada_activa() -> list:
-    """Devuelve el orden de juego de los partidos de la jornada activa AHORA,
-    leido del CSV (que respeta el orden real de juego).
-
-    Cada elemento es una tupla de nombres normalizados de los 2 jugadores:
-        [(norm_j1, norm_j2), (norm_j1, norm_j2), ...]
-
-    El indice en la lista = orden de juego. Sirve para ordenar los partidos
-    que la API devuelve desordenados.
-
-    Lista vacia si no hay jornada activa o el CSV no se puede leer.
-    """
-    jornada = detectar_jornada_de_hoy()
-    if not jornada:
-        return []
-
-    lineas = _descargar_csv_jornada(jornada)
-    if not lineas:
-        return []
-    idx_inicio = FILA_INICIO_PARTIDOS - 1
-    filas = lineas[idx_inicio:]
-
-    orden = []
-    i = 0
-    while i + 1 < len(filas):
-        fila1 = filas[i]
-        fila2 = filas[i + 1]
-        i += 2
-        n1 = fila1[0].strip() if len(fila1) > 0 else ""
-        n2 = fila2[0].strip() if len(fila2) > 0 else ""
-        if not n1 or not n2:
-            continue  # hueco (nombres no cargados aun), saltar
-        orden.append((_normalizar_nombre_hist(n1),
-                      _normalizar_nombre_hist(n2)))
-    return orden
-
-
-def _indice_orden_partido(j1, j2, orden_csv):
-    """Dado un partido (j1, j2) y la lista de orden del CSV, devuelve su
-    posicion de juego. Si no se encuentra, devuelve un numero grande para
-    que quede al final. Compara por nombres normalizados en cualquier orden.
-    """
-    nj1 = _normalizar_nombre_hist(j1)
-    nj2 = _normalizar_nombre_hist(j2)
-
-    def _coincide(a, b):
-        return (a in b or b in a) if a and b else False
-
-    for idx, (c1, c2) in enumerate(orden_csv):
-        # El partido puede venir como (j1,j2) o (j2,j1)
-        if ((_coincide(nj1, c1) and _coincide(nj2, c2)) or
-                (_coincide(nj1, c2) and _coincide(nj2, c1))):
-            return idx
-    return 9999
-
 
 @st.cache_data(ttl=60, show_spinner=False)
 def obtener_proximos_partidos_csv(limite=5) -> dict:
@@ -1226,9 +953,8 @@ def obtener_proximos_partidos_csv(limite=5) -> dict:
     jornada que toca (activa o, si no hay activa, la proxima), en ORDEN
     DE JUEGO REAL.
 
-    A diferencia de obtener_proximos_partidos_api(), NO usa la API de MODUS
-    (que devuelve fixtures de jornadas viejas ya finalizadas). Se basa solo
-    en el CSV de la jornada correcta.
+    No usa la API de MODUS (igamemedia, abandonada): se basa solo en el
+    CSV de la jornada correcta.
 
     Reglas:
       - Jornada activa con datos -> sus partidos no empezados.
@@ -1332,6 +1058,24 @@ def obtener_proximos_partidos_csv(limite=5) -> dict:
             # Las semis/final van al principio (mas relevantes para apostar)
             if extra:
                 proximos = extra + proximos
+        except Exception:
+            pass
+
+    # Final Sábado sin nombres aun en el Sheet: ofrecemos los cruces de los
+    # grupos de la Final ya conocidos por la clasificacion semanal (todos
+    # contra todos dentro de cada grupo), para poder predecirlos antes.
+    if jornada == "Final Sábado" and not proximos:
+        try:
+            from itertools import combinations
+            from clasificacion import construir_grupos_final
+            for nombre_g, jugs in construir_grupos_final().items():
+                nombres = [d["jugador"] for d in jugs if d.get("jugador")]
+                etq = nombre_g.replace(" Final", "")
+                for a_, b_ in combinations(nombres, 2):
+                    proximos.append({
+                        "id": f"{a_}-{b_}", "j1": a_, "j2": b_,
+                        "etiqueta": f"[Final · {etq}] {a_} vs {b_}",
+                    })
         except Exception:
             pass
 
