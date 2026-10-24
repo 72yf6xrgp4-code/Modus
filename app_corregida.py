@@ -114,19 +114,64 @@ st.sidebar.markdown("---")
 # jornada, el refresco y el modo administrador.
 SECCIONES = ["🔴 LIVE", "💰 VALUE BETS", "📊 RESULTADOS Y ESTADÍSTICAS",
              "📈 SEGUIMIENTO", "📚 HISTÓRICO"]
-_CORTAS = {"🔴 LIVE": "🔴 Live", "💰 VALUE BETS": "💰 Value Bets",
-           "📊 RESULTADOS Y ESTADÍSTICAS": "📊 Resultados",
-           "📈 SEGUIMIENTO": "📈 Seguimiento", "📚 HISTÓRICO": "📚 Histórico"}
+# Etiquetas del menu: iconos sencillos (Material) en vez de emojis
+_MENU = {"🔴 LIVE": ":material/sensors: Live",
+         "💰 VALUE BETS": ":material/payments: Value Bets",
+         "📊 RESULTADOS Y ESTADÍSTICAS": ":material/leaderboard: Resultados",
+         "📈 SEGUIMIENTO": ":material/monitoring: Seguimiento",
+         "📚 HISTÓRICO": ":material/history: Histórico"}
 if st.session_state.get("seccion") not in SECCIONES:
     st.session_state["seccion"] = st.session_state.get("_ultima_seccion", SECCIONES[0])
 opcion_principal = st.segmented_control(
-    "Sección", SECCIONES, format_func=_CORTAS.get, key="seccion",
+    "Sección", SECCIONES, format_func=_MENU.get, key="seccion",
     label_visibility="collapsed",
 )
 # Pulsar la seccion ya activa la deselecciona: nos quedamos en la misma
 if not opcion_principal:
     opcion_principal = st.session_state.get("_ultima_seccion", SECCIONES[0])
 st.session_state["_ultima_seccion"] = opcion_principal
+
+# Aspecto del menu: pildoras arriba (fijas al bajar por la pagina) y, en el
+# movil, barra fija abajo como en una app, con la seccion activa en rojo.
+st.markdown("""
+<style>
+[data-testid=stHeader]{background:#fff}
+.st-key-seccion{width:100%!important;position:sticky;top:3.75rem;z-index:990;
+  background:#fff;padding:.35rem 0 .55rem;margin-bottom:.25rem}
+.st-key-seccion [data-testid=stButtonGroup]{width:100%}
+.st-key-seccion [role=radiogroup]{display:flex;flex-wrap:nowrap;gap:.5rem;
+  max-width:none!important;width:100%;overflow-x:auto;scrollbar-width:none}
+.st-key-seccion [role=radiogroup]::-webkit-scrollbar{display:none}
+.st-key-seccion button[role=radio]{flex:0 0 auto;border-radius:999px!important;
+  border:1px solid #e2e8f0!important;background:#f8fafc!important;
+  color:#334155!important;padding:.45rem 1.05rem!important;box-shadow:none!important}
+.st-key-seccion button[role=radio] p{font-weight:600;white-space:nowrap}
+.st-key-seccion button[role=radio] [data-testid=stIconMaterial]{font-size:1.2rem}
+.st-key-seccion button[aria-checked=true]{background:#ff4b4b!important;
+  border-color:#ff4b4b!important;color:#fff!important;
+  box-shadow:0 3px 8px rgba(255,75,75,.30)!important}
+@media (hover:hover){
+  .st-key-seccion button[aria-checked=false]:hover{border-color:#cbd5e1!important;
+    background:#f1f5f9!important}
+}
+@media (max-width:640px){
+  .st-key-seccion{position:fixed!important;left:0;right:0;bottom:0;top:auto!important;
+    z-index:999990;margin:0!important;
+    padding:.35rem .35rem calc(.35rem + env(safe-area-inset-bottom))!important;
+    border-top:1px solid #e5e7eb;box-shadow:0 -6px 18px rgba(15,23,42,.08)}
+  .st-key-seccion [role=radiogroup]{gap:.2rem;overflow:visible}
+  .st-key-seccion button[role=radio]{flex:1 1 0;min-width:0;height:auto!important;
+    min-height:3.3rem;padding:.35rem 0!important;border:0!important;
+    background:transparent!important;color:#64748b!important;overflow:visible!important}
+  .st-key-seccion button[role=radio] span[data-has-shortcut]{flex-direction:column;gap:1px}
+  .st-key-seccion button[role=radio] p{font-size:.68rem}
+  .st-key-seccion button[aria-checked=true]{background:#ff4b4b!important;
+    color:#fff!important;border-radius:16px!important;
+    box-shadow:0 3px 8px rgba(255,75,75,.30)!important}
+  .block-container{padding-bottom:6rem!important}
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔄 Actualización")
