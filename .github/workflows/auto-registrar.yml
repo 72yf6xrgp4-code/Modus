@@ -1,8 +1,10 @@
 name: Auto-Registrar Predicciones
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
+  # Lo lanza cron-job.org (llamada a la API, "workflow_dispatch") en las
+  # franjas de juego. Sin "schedule" propio: GitHub desactiva los workflows
+  # programados de repos publicos tras 60 dias sin commits (asi se paro el
+  # seguimiento el 19-ago-2026) y ademas se ejecutaba dos veces cada 15 min.
   workflow_dispatch:
 
 jobs:
