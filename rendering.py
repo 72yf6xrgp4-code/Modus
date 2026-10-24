@@ -40,6 +40,7 @@ try:
         listar_partidos_registrados, comprobar_partidos_anteriores,
         guardar_historico_semana, cargar_historico,
         quitar_handicaps_duplicados, limpiar_predicciones,
+        archivar_caducadas,
     )
     _PREDICCIONES_OK = True
     _PREDICCIONES_ERROR = ""
@@ -58,6 +59,7 @@ except Exception as _e:
     cargar_historico = None
     quitar_handicaps_duplicados = lambda df: df
     limpiar_predicciones = lambda df: df
+    archivar_caducadas = None
 
 def render_barras_enfrentadas(j1_nombre, j1_prob, j2_nombre, j2_prob, j1_color="#1f77b4", j2_color="#ff7f0e"):
     total = j1_prob + j2_prob
@@ -2347,6 +2349,31 @@ def render_tracking_predicciones(jugadores_resumen=None):
             else:
                 st.error(f"❌ {res_ver['error']}")
 
+    # ── Limpieza: archivar predicciones caducadas ───────────────────────────
+    if es_admin() and archivar_caducadas is not None:
+        with st.expander("🧹 Limpiar partidos no verificados", expanded=False):
+            st.markdown(
+                "Mueve a la pestaña **Predicciones caducadas** las "
+                "predicciones de semanas ya cerradas que se quedaron sin "
+                "verificar (las pestañas de jornada ya no tienen esos "
+                "partidos). No se borra nada: se pueden consultar en esa "
+                "pestaña. Las de la semana en curso no se tocan. Se hace "
+                "solo en el cierre semanal."
+            )
+            if st.button("🧹 Archivar caducadas", key="trk_btn_archivar"):
+                with st.spinner("Moviendo predicciones caducadas..."):
+                    r = archivar_caducadas()
+                if r["ok"]:
+                    if r["movidas"]:
+                        st.success(f"✅ {r['movidas']} predicciones "
+                                   f"({r['partidos']} partidos) movidas a "
+                                   f"'Predicciones caducadas'.")
+                    else:
+                        st.info("No había predicciones caducadas.")
+                    cargar_predicciones.clear()
+                else:
+                    st.error(f"❌ {r['error']}")
+
     # ── Parte 3: panel de metricas de calibracion ────────────────────────────
     st.markdown("### 🎯 Calidad del modelo")
 
@@ -2367,10 +2394,54 @@ def render_tracking_predicciones(jugadores_resumen=None):
         )
         return
 
-    metricas = calcular_metricas(df_pred)
+    # ── Separacion: modelo nuevo (desde el cambio) / historico ──────────────
+    try:
+        from comparativa import separar_por_modelo
+        from config import MODELO_VERSION
+        grupos = separar_por_modelo(df_pred)
+    except Exception:
+        grupos, MODELO_VERSION = {}, "v2"
+    df_nuevo = grupos.get(MODELO_VERSION)
+    df_hist = (pd.concat([g for v, g in grupos.items() if v != MODELO_VERSION])
+               if any(v != MODELO_VERSION for v in grupos) else None)
+    OPC_NUEVO = "🆕 A partir de ahora (modelo nuevo)"
+    OPC_HIST = "📦 Histórico (modelo anterior)"
+    OPC_TODO = "Todo"
+    periodo = st.segmented_control(
+        "Estadísticas de", [OPC_NUEVO, OPC_HIST, OPC_TODO],
+        default=OPC_NUEVO, key="trk_periodo") or OPC_NUEVO
+    if periodo == OPC_NUEVO:
+        if df_nuevo is None or df_nuevo.empty:
+            st.info(
+                "🆕 Aún no hay partidos registrados con el modelo nuevo. Los "
+                "que se registren desde ahora aparecerán aquí, separados del "
+                "histórico. Mientras tanto puedes ver el **Histórico**."
+            )
+            render_comparativa_modelos(df_pred)
+            return
+        try:
+            desde = pd.to_datetime(df_nuevo["Fecha registro"].astype(str),
+                                   errors="coerce").min()
+            st.caption(f"Partidos registrados con el modelo nuevo, desde el "
+                       f"{desde:%d/%m/%Y}.")
+        except Exception:
+            pass
+        df_vista = df_nuevo
+    elif periodo == OPC_HIST:
+        if df_hist is None or df_hist.empty:
+            st.info("No hay partidos del modelo anterior.")
+            render_comparativa_modelos(df_pred)
+            return
+        st.caption("Partidos registrados con el modelo anterior (hasta el "
+                   "cambio de calibración).")
+        df_vista = df_hist
+    else:
+        df_vista = df_pred
+
+    metricas = calcular_metricas(df_vista)
 
     # Sin handicaps J2 duplicados, registros repetidos ni verificaciones a medias
-    total_reg = len(limpiar_predicciones(df_pred))
+    total_reg = len(limpiar_predicciones(df_vista))
     evaluadas = metricas["evaluadas"]
     pendientes = metricas["pendientes"]
 
@@ -2396,6 +2467,7 @@ def render_tracking_predicciones(jugadores_resumen=None):
             "de la hoja *Predicciones* (1 = acerto, 0 = fallo) y las "
             "metricas apareceran aqui."
         )
+        render_comparativa_modelos(df_pred)
         return
 
     # Aviso de muestra pequena
@@ -2555,7 +2627,7 @@ def render_tracking_predicciones(jugadores_resumen=None):
     if listar_partidos_registrados is not None:
         st.markdown("---")
         st.markdown("### 📋 Partidos registrados")
-        lista = listar_partidos_registrados(df_pred)
+        lista = listar_partidos_registrados(df_vista)
         if not lista:
             st.info("Aun no hay partidos registrados.")
         else:

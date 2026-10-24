@@ -7,6 +7,9 @@ Disenado para ejecutarse cada domingo a las 05:00 Madrid via cron-job.org
      Sheet (con la fecha del sabado de la semana que acaba de terminar).
   2. Verifica todos los partidos pendientes en la pestana 'Predicciones'
      (escribe la columna 'Acierto' segun los resultados reales).
+  3. Guarda el campeon de la semana.
+  4. Mueve a 'Predicciones caducadas' las de semanas ya cerradas que se
+     quedaron sin verificar.
 
 Apunta el resultado en la pestana 'Log Auto Registro' del Sheet con
 jornada='Cierre Semanal' para distinguirlo del auto-registro diario.
@@ -109,7 +112,7 @@ def main():
         from data_loading import cargar_jugadores_desde
         from predicciones import (
             guardar_historico_semana, verificar_resultados,
-            escribir_log_auto, guardar_campeon_semana,
+            escribir_log_auto, guardar_campeon_semana, archivar_caducadas,
         )
         from clasificacion import obtener_campeon_semana
     except Exception as e:
@@ -229,6 +232,25 @@ def main():
         print(f"     {msg_camp}")
         traceback.print_exc()
         detalles_total.append(msg_camp)
+        estados.append("ERROR")
+
+    # ── 4) Archivar predicciones caducadas (semanas cerradas sin verificar)
+    print("  -> Paso 4/4: archivar predicciones caducadas")
+    try:
+        res_arch = archivar_caducadas()
+        if res_arch.get("ok"):
+            msg_arch = (f"Caducadas archivadas: {res_arch.get('movidas', 0)} "
+                        f"({res_arch.get('partidos', 0)} partidos)")
+        else:
+            msg_arch = f"ERROR archivando caducadas: {res_arch.get('error')}"
+            estados.append("ERROR")
+        print(f"     {msg_arch}")
+        detalles_total.append(msg_arch)
+    except Exception as e:
+        msg_arch = f"EXCEPCION archivando caducadas: {e}"
+        print(f"     {msg_arch}")
+        traceback.print_exc()
+        detalles_total.append(msg_arch)
         estados.append("ERROR")
 
     # ── Log final ─────────────────────────────────────────────────────────

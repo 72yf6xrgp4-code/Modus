@@ -20,6 +20,7 @@ Depende de: config, stats_engine, data_loading.
 
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 import pandas as pd
@@ -658,6 +659,84 @@ def mascara_caducadas(df, ahora=None):
     sin_acierto = (df["Acierto"].astype(str).str.strip() == ""
                    if "Acierto" in df.columns else True)
     return sin_acierto & fecha.notna() & (fecha < inicio)
+
+
+NOMBRE_HOJA_CADUCADAS = "Predicciones caducadas"
+
+
+def archivar_caducadas(url_sheet=None, ahora=None):
+    """Saca de 'Predicciones' las predicciones caducadas (semana cerrada y
+    sin verificar) y las mueve a la pestana 'Predicciones caducadas'.
+
+    No se borra nada: las filas se copian primero al archivo y solo si la
+    copia sale bien se quitan de 'Predicciones'.
+
+    Devuelve {ok, movidas, partidos, error}.
+    """
+    hoja, err = _abrir_hoja_predicciones(url_sheet)
+    if hoja is None:
+        return {"ok": False, "movidas": 0, "partidos": 0, "error": err}
+    try:
+        valores = hoja.get_all_values()
+    except Exception as e:
+        return {"ok": False, "movidas": 0, "partidos": 0,
+                "error": f"No se pudo leer la hoja: {e}"}
+    if len(valores) < 2:
+        return {"ok": True, "movidas": 0, "partidos": 0, "error": ""}
+
+    cab = valores[0]
+    ancho = len(cab)
+    datos = [fila + [""] * (ancho - len(fila)) for fila in valores[1:]]
+    df = pd.DataFrame([f[:ancho] for f in datos], columns=cab)
+    mascara = mascara_caducadas(df, ahora)
+    indices = [i for i, m in enumerate(mascara.tolist()) if m]
+    if not indices:
+        return {"ok": True, "movidas": 0, "partidos": 0, "error": ""}
+
+    partidos = len({(df.iloc[i].get("Semana", ""), df.iloc[i].get("Jugador 1", ""),
+                     df.iloc[i].get("Jugador 2", "")) for i in indices})
+
+    # 1) Copiar al archivo
+    try:
+        libro = hoja.spreadsheet
+        try:
+            archivo = libro.worksheet(NOMBRE_HOJA_CADUCADAS)
+        except Exception:
+            archivo = libro.add_worksheet(title=NOMBRE_HOJA_CADUCADAS,
+                                          rows=max(100, len(indices) + 10),
+                                          cols=ancho + 1)
+            archivo.append_row(cab + ["Archivada"],
+                               value_input_option="RAW")
+        sello = (ahora or datetime.now(ZoneInfo("Europe/Madrid"))).strftime(
+            "%Y-%m-%d %H:%M")
+        archivo.append_rows([datos[i][:ancho] + [sello] for i in indices],
+                            value_input_option="RAW")
+    except Exception as e:
+        return {"ok": False, "movidas": 0, "partidos": partidos,
+                "error": f"No se pudieron copiar al archivo (no se ha "
+                         f"quitado nada): {e}"}
+
+    # 2) Quitar de 'Predicciones' (bloques seguidos, de abajo arriba)
+    bloques = []
+    for i in indices:
+        fila = i + 1  # 0-based en la hoja: +1 por la cabecera
+        if bloques and bloques[-1][1] == fila:
+            bloques[-1][1] = fila + 1
+        else:
+            bloques.append([fila, fila + 1])
+    peticiones = [{"deleteDimension": {"range": {
+        "sheetId": hoja.id, "dimension": "ROWS",
+        "startIndex": a, "endIndex": b}}} for a, b in reversed(bloques)]
+    try:
+        hoja.spreadsheet.batch_update({"requests": peticiones})
+    except Exception as e:
+        return {"ok": False, "movidas": 0, "partidos": partidos,
+                "error": f"Se copiaron al archivo pero no se pudieron quitar "
+                         f"de 'Predicciones': {e}. Vuelve a intentarlo; "
+                         f"las copias repetidas del archivo no afectan a "
+                         f"nada."}
+    return {"ok": True, "movidas": len(indices), "partidos": partidos,
+            "error": ""}
 
 
 def calcular_metricas(df):
