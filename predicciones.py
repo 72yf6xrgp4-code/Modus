@@ -469,7 +469,7 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
     # Mapa {ID -> numero de fila en la hoja} para saber que sobrescribir.
     # La fila 1 es la cabecera, asi que los datos empiezan en la fila 2.
     try:
-        registros = hoja.get_all_records()
+        registros = hoja.get_all_records(numericise_ignore=["all"])
         filas_por_id = {}
         for idx, r in enumerate(registros):
             id_r = str(r.get("ID", "")).strip()
@@ -582,8 +582,11 @@ def cargar_predicciones(url_sheet):
     hoja, err = _abrir_hoja_predicciones(url_sheet)
     if hoja is None:
         return pd.DataFrame()
+    # numericise_ignore=["all"]: todo llega como texto. Sin esto gspread
+    # quita las comas ("0,0933" -> 933, "0,5" -> 5) y las probabilidades
+    # por debajo del 10 % (y las de un solo decimal) se leian mal.
     try:
-        registros = hoja.get_all_records()
+        registros = hoja.get_all_records(numericise_ignore=["all"])
         return pd.DataFrame(registros)
     except Exception:
         return pd.DataFrame()
@@ -1554,7 +1557,7 @@ def verificar_resultados(url_sheet=None):
 
     # Leer todas las predicciones
     try:
-        registros = hoja.get_all_records()
+        registros = hoja.get_all_records(numericise_ignore=["all"])
     except Exception as e:
         return {"ok": False, "verificadas": 0, "aciertos": 0, "fallos": 0,
                 "sin_cambios": 0,

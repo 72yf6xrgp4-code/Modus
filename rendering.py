@@ -942,6 +942,15 @@ def render_value_bets():
         if "vb_j2" not in st.session_state:
             kwargs_j2["index"] = 0
         j2_sel = st.selectbox("Jugador 2", opciones_j2, **kwargs_j2)
+    # Al cambiar de partido se vacian las cuotas escritas: si no, las del
+    # partido anterior seguian puestas y salian "value bets" que no lo eran.
+    par_actual = (j1_sel, j2_sel)
+    if st.session_state.get("_vb_par") not in (None, par_actual):
+        for k in [k for k in st.session_state.keys()
+                  if isinstance(k, str) and k.startswith(
+                      ("vic_", "180_", "mas_", "hcap_", "legs_"))]:
+            del st.session_state[k]
+    st.session_state["_vb_par"] = par_actual
     with col3:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔢 Calcular", type="primary", use_container_width=True, help="Calcular probabilidades"):
@@ -1831,23 +1840,23 @@ def render_value_bets():
                 background: linear-gradient(90deg, rgba(40,167,69,0.1) 0%, rgba(40,167,69,0.02) 100%);
                 border-radius: 5px;
             ">
-                <div style="display: grid; grid-template-columns: 3fr 1fr 1fr 1fr 1fr; gap: 15px; align-items: center;">
-                    <div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;">
+                    <div style="flex: 1 1 100%; min-width: 0;">
                         <p style="margin: 0; font-size: 1.1em; font-weight: bold; color: #333;">{vb["Mercado"]}</p>
                     </div>
-                    <div style="text-align: center;">
+                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
                         <p style="margin: 0; font-size: 0.8em; color: #666;">Probabilidad</p>
                         <p style="margin: 0; font-size: 1.1em; font-weight: bold; color: #1f77b4;">{vb["Probabilidad"]*100:.1f}%</p>
                     </div>
-                    <div style="text-align: center;">
+                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
                         <p style="margin: 0; font-size: 0.8em; color: #666;">Cuota Justa</p>
                         <p style="margin: 0; font-size: 1.1em; font-weight: bold;">{vb["Cuota Justa"]:.2f}</p>
                     </div>
-                    <div style="text-align: center;">
+                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
                         <p style="margin: 0; font-size: 0.8em; color: #666;">Cuota Bookie</p>
                         <p style="margin: 0; font-size: 1.1em; font-weight: bold; color: #ff7f0e;">{vb["Cuota Bookie"]:.2f}</p>
                     </div>
-                    <div style="text-align: center;">
+                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
                         <p style="margin: 0; font-size: 0.8em; color: #666;">Yield</p>
                         <p style="margin: 0; font-size: 1.3em; font-weight: bold; color: #28a745;">+{yield_pct:.1f}%</p>
                     </div>
@@ -1856,7 +1865,18 @@ def render_value_bets():
             """, unsafe_allow_html=True)
         st.success(f"✅ Se encontraron **{len(value_bets_list)}** mercados con value positivo")
     else:
-        st.info("ℹ️ No se encontraron value bets con las cuotas introducidas")
+        claves_cuota = ("vic_", "180_", "mas_", "hcap_", "legs_")
+        hay_cuotas = any(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for k, v in st.session_state.items()
+            if isinstance(k, str) and k.startswith(claves_cuota))
+        if hay_cuotas:
+            st.info("ℹ️ Ninguna de las cuotas introducidas tiene value "
+                    "(🟢). Prueba con otros mercados de las pestañas.")
+        else:
+            st.info("✍️ Escribe la cuota de tu casa de apuestas en cualquier "
+                    "mercado de las pestañas de arriba y aquí verás si tiene "
+                    "value.")
 
 def render_heatmap_estadisticas(stats_dict, titulo="📊 Comparativa de Estadísticas"):
     """Renderiza un heatmap (tabla coloreada) con las 5 métricas clave por jugador.

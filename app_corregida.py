@@ -35,6 +35,14 @@ st.markdown("""
     gap: 12px;
     margin: 10px 0 20px 0;
 }
+/* Menos hueco arriba y titulos que no ocupen dos lineas en el movil */
+.block-container { padding-top: 3.5rem; }
+@media (max-width: 768px) {
+    .block-container { padding-top: 3rem; padding-left: 1rem; padding-right: 1rem; }
+    h1 { font-size: 1.75rem !important; }
+    h2 { font-size: 1.4rem !important; }
+    h3 { font-size: 1.2rem !important; }
+}
 @media (max-width: 768px) {
     .stats-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));

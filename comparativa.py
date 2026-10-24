@@ -201,6 +201,9 @@ def comparar_retroactivo(df, v_old="v1", v_new="v2"):
         filas = _filas_partido(grupo)
         nombre = f"{clave[2]} vs {clave[3]}" if len(clave) >= 4 else str(clave)
         semana = clave[0] if clave else ""
+        # Identificador unico del partido (la misma pareja puede jugar
+        # varias semanas o en grupo y Final)
+        nombre = nombre + " · " + " | ".join(str(c) for c in clave)
 
         # --- diferencia de PG desde el ganador guardado ---
         fg = filas.get(("Ganador", "Ganador del partido"))
