@@ -1,0 +1,5 @@
+# Tema claro fijo: las tarjetas HTML de la app (empty states, campeones,
+# clasificaciones...) estan diseñadas en claro y en modo oscuro quedaban
+# textos blancos sobre fondo blanco.
+[theme]
+base = "light"
