@@ -15,50 +15,29 @@ from scipy.stats import poisson
 from functools import lru_cache
 
 from config import (ELO_S, ELO_B, LEGS_PROMEDIO_REFERENCIA, URLS, CORTES,
-                    MUESTRA_MIN_PARTIDOS)
+                    MUESTRA_MIN_PARTIDOS, LAMBDA_180_PESO_JUGADOR,
+                    LAMBDA_180_MEDIA_TORNEO)
 from helpers import sanitize_prob, safe_float, _buscar_stat
 from data_loading import cargar_todo
 
 
 
-def medias_torneo():
-    """Media de PR y de 180s por partido de los jugadores del Resumen
-    Semanal (solo los que tienen datos). None si no se puede calcular."""
-    try:
-        from data_loading import cargar_jugadores_desde
-        resumen = cargar_jugadores_desde("Resumen Semanal") or {}
-    except Exception:
-        return None
-    prs = [j.get("PR", 0.0) for j in resumen.values() if j.get("PR", 0.0) > 0]
-    l180 = [j.get("lam_180", 0.0) for j in resumen.values() if j.get("PR", 0.0) > 0]
-    if len(prs) < 3:
-        return None
-    return {"PR": sum(prs) / len(prs), "lam_180": sum(l180) / len(l180)}
-
-
-def ajustar_por_muestra(jugador, medias=None, n_min=None):
-    """Devuelve una copia del jugador con PR y lam_180 acercados a la media
-    del torneo cuando ha jugado pocos partidos (ver MUESTRA_MIN_PARTIDOS).
-
-    peso = n_partidos / n_min  (1 partido de 6 -> 17 % su dato, 83 % la media)
-    Jugadores sin el dato n_partidos, o con n_partidos >= n_min, no cambian.
-    La copia lleva "_ajuste" = (n, PR original, PR ajustado) para mostrarlo.
-    """
+def pocos_partidos(jugador, n_min=None):
+    """Numero de partidos si el jugador tiene menos de MUESTRA_MIN_PARTIDOS
+    (para avisar de que sus datos son poco fiables); None si no hace falta
+    avisar o no se sabe. No modifica ningun calculo."""
     n_min = MUESTRA_MIN_PARTIDOS if n_min is None else n_min
     n = jugador.get("n_partidos")
-    if not n_min or not isinstance(n, (int, float)) or n <= 0 or n >= n_min:
-        return jugador
-    medias = medias if medias is not None else medias_torneo()
-    if not medias:
-        return jugador
-    peso = n / n_min
-    nuevo = dict(jugador)
-    for campo in ("PR", "lam_180"):
-        v = jugador.get(campo, 0.0)
-        if v > 0:
-            nuevo[campo] = peso * v + (1 - peso) * medias[campo]
-    nuevo["_ajuste"] = (int(n), jugador.get("PR", 0.0), nuevo.get("PR", 0.0))
-    return nuevo
+    if n_min and isinstance(n, (int, float)) and 0 < n < n_min:
+        return int(n)
+    return None
+
+
+def lambda_180_calibrada(lam):
+    """Media de 180s por partido que usa el modelo para un jugador: su dato
+    de la semana acercado a la media del torneo (ver config.py)."""
+    w = LAMBDA_180_PESO_JUGADOR
+    return w * max(lam or 0.0, 0.0) + (1.0 - w) * LAMBDA_180_MEDIA_TORNEO
 
 
 def prob_leg(pg1, pg2, j1_saca, S=ELO_S, B=ELO_B):
@@ -129,12 +108,15 @@ def prob_victoria(pr1, pr2, j1_saca_primero=True):
     return sanitize_prob(p1), sanitize_prob(1.0 - p1)
 
 def prob_180s(lam1, lam2, pr1=None, pr2=None, j1_saca_primero=True):
-    """Mercados de 180s con Poisson. Si se pasan pr1, pr2 (PG de los jugadores),
+    """Mercados de 180s con Poisson. lam1/lam2 son la media de 180s por partido
+    de cada jugador; antes de usarla se acerca a la media del torneo
+    (lambda_180_calibrada). Si se pasan pr1, pr2 (PG de los jugadores),
     ajusta lambda multiplicando por (E[legs del partido] / LEGS_PROMEDIO_REFERENCIA)
     para que partidos más reñidos generen proporcionalmente más 180s.
 
     Si solo se pasan lam1, lam2, no aplica ajuste (lambda = T directamente).
     """
+    lam1, lam2 = lambda_180_calibrada(lam1), lambda_180_calibrada(lam2)
     factor = 1.0
     if pr1 is not None and pr2 is not None and pr1 > 0 and pr2 > 0:
         finales = simular_match(pr1, pr2, j1_saca_primero)
@@ -174,6 +156,7 @@ def quien_hace_mas_180s(lam1, lam2, pr1=None, pr2=None, j1_saca_primero=True, k_
 
     k_max=15 cubre cómodamente los rangos típicos (lam ≈ 1-3, P(>15) < 1e-8).
     """
+    lam1, lam2 = lambda_180_calibrada(lam1), lambda_180_calibrada(lam2)
     factor = 1.0
     if pr1 is not None and pr2 is not None and pr1 > 0 and pr2 > 0:
         finales = simular_match(pr1, pr2, j1_saca_primero)

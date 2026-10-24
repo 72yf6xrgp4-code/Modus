@@ -316,14 +316,6 @@ def calcular_mercados_partido(j1_data, j2_data):
     son las mismas apuestas al reves), total de legs, 7 de 180s y el H2H
     de 180s.
     """
-    # Pocos partidos -> datos acercados a la media del torneo
-    try:
-        from stats_engine import ajustar_por_muestra, medias_torneo
-        _medias = medias_torneo()
-        j1_data = ajustar_por_muestra(j1_data, _medias)
-        j2_data = ajustar_por_muestra(j2_data, _medias)
-    except Exception:
-        pass
     pr1 = j1_data.get("PR", 0.0)
     pr2 = j2_data.get("PR", 0.0)
     lam1 = j1_data.get("lam_180", 0.0)
@@ -594,6 +586,44 @@ def quitar_handicaps_duplicados(df):
     return df[~dup].copy()
 
 
+def limpiar_predicciones(df):
+    """Deja solo las predicciones que cuentan para las metricas.
+
+    - Quita las lineas de handicap de J2 (duplican las de J1).
+    - Quita las verificadas con un marcador a medias ("3-1", "3-3"...): se
+      verificaron con el partido aun en juego (fallo ya corregido), asi que
+      su acierto no vale.
+    - Si el mismo partido se registro dos veces el mismo dia de jornada
+      (con otro ID por la diferencia UTC/Madrid, ya corregida), se queda
+      solo el ultimo registro.
+    """
+    df = quitar_handicaps_duplicados(df)
+    if df is None or df.empty:
+        return df
+    if "Resultado real" in df.columns:
+        res = df["Resultado real"].astype(str).str.strip()
+        partes = res.str.extract(r"^(\d+)\s*-\s*(\d+)$")
+        con_marcador = partes[0].notna()
+        terminado = (partes[0].astype(float).fillna(0).clip(lower=0).combine(
+            partes[1].astype(float).fillna(0), max) >= 4)
+        df = df[~(con_marcador & ~terminado)].copy()
+    cols = ["Jugador 1", "Jugador 2", "Mercado", "Linea", "Fecha registro"]
+    if all(c in df.columns for c in cols) and not df.empty:
+        fecha = pd.to_datetime(df["Fecha registro"].astype(str), errors="coerce")
+        df = df.assign(_dia=(fecha - pd.Timedelta(hours=3)).dt.strftime("%Y-%m-%d"),
+                       _orden=fecha)
+        clave = [df["Jugador 1"].astype(str).str.lower().str.strip(),
+                 df["Jugador 2"].astype(str).str.lower().str.strip(),
+                 df["Mercado"].astype(str).str.strip(),
+                 df["Linea"].astype(str).str.strip(), df["_dia"]]
+        df = df.assign(_k=pd.Series(list(zip(*clave)), index=df.index))
+        df = (df.sort_values("_orden", kind="stable")
+                .drop_duplicates("_k", keep="last")
+                .sort_index()
+                .drop(columns=["_dia", "_orden", "_k"]))
+    return df
+
+
 def calcular_metricas(df):
     """Calcula las metricas de calidad del modelo a partir del DataFrame de
     predicciones. Solo usa las filas que tienen 'Acierto' relleno (es decir,
@@ -628,7 +658,9 @@ def calcular_metricas(df):
             return 0
         return None  # vacio / desconocido -> pendiente
 
-    df = quitar_handicaps_duplicados(df)
+    df = limpiar_predicciones(df)
+    if df is None or df.empty:
+        return vacio
     df["_acierto"] = df["Acierto"].apply(_norm_acierto)
 
     # Separar las dos categorias

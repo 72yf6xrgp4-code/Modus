@@ -120,17 +120,39 @@ PALETA_JUGADORES = [
 
 # Cambiar estos valores recalibra TODO el modelo de victoria, hándicaps y legs.
 
-ELO_S = 90.0     # Sensibilidad: a menor S, el favorito tiene más peso
-ELO_B = 10.0      # Bonus de saque (Throw First Advantage), en puntos de PG
+# Calibrados con el seguimiento real (597 partidos terminados del 26-may al
+# 18-ago-2026, validando semana a semana con datos que el ajuste no veia):
+#   - Con S=90 el modelo se quedaba corto con el favorito: cuando daba
+#     60-75 %, el favorito ganaba un 71-93 %, y sobraban partidos largos
+#     (predecia 61,6 % de "mas de 5,5 legs" y hubo 56,7 %).
+#   - El mejor ajuste es S~48-50 y B~8; mejora el ganador, los handicaps y
+#     el total de legs fuera de muestra.
+ELO_S = 50.0     # Sensibilidad: a menor S, el favorito tiene más peso (antes 90)
+ELO_B = 8.0      # Bonus de saque (Throw First Advantage), en puntos de PG (antes 10)
 
 # Referencia para escalar lambda de 180s. Si E[legs] del partido > 5.7,
 # se esperan más 180s; si E[legs] < 5.7, menos. Calibrado a partidos equilibrados.
 LEGS_PROMEDIO_REFERENCIA = 5.7
 
-# Muestra pequeña: con menos de estos partidos, el PR y la media de 180s de
-# un jugador se acercan a la media del torneo en proporcion a lo que ha
-# jugado (1 partido = 1/6 de su dato y 5/6 de la media). A partir de este
-# numero se usan sus datos tal cual. 0 desactiva el ajuste.
+# 180s: la media de 180s de un jugador en la semana sale de pocos partidos y
+# es muy ruidosa. En el seguimiento, quien "hacia" muchos 180s hizo menos de
+# lo previsto y quien hacia pocos, mas (p. ej. se daba un 34 % de hacer
+# alguno y pasaba el 49 %). El modelo usa:
+#   lambda = PESO * media_del_jugador + (1 - PESO) * MEDIA_TORNEO
+# (ajustado con los mismos 597 partidos; PESO estable entre 0,4 y 0,6
+# semana a semana). PESO = 1 vuelve al calculo anterior.
+LAMBDA_180_PESO_JUGADOR = 0.55
+LAMBDA_180_MEDIA_TORNEO = 0.95   # 180s por partido de un jugador medio
+
+# Value bets: margen de seguridad. Un mercado solo se marca como value si la
+# probabilidad del modelo supera la de la cuota en al menos este margen:
+#   prob_modelo >= 1/cuota + MARGEN_VALUE   (equivale a yield >= MARGEN*cuota)
+# El modelo, ya calibrado, sigue fallando +-5 puntos en algunos tramos, asi
+# que un yield de +2 % no es fiable. 0 = cualquier yield positivo (como antes).
+MARGEN_VALUE = 0.05
+
+# Por debajo de estos partidos jugados se avisa de que los datos del jugador
+# son poco fiables (no cambia los calculos).
 MUESTRA_MIN_PARTIDOS = 6
 
 GRUPOS_DIAS = {

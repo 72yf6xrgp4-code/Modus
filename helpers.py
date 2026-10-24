@@ -205,6 +205,30 @@ def pct(p):
 def calcular_yield(prob, cuota_bookie):
     return (prob * cuota_bookie) - 1
 
+def es_value(y, cuota, margen=None):
+    """True si la apuesta es value con margen de seguridad.
+
+    y = prob * cuota - 1. Exigir prob >= 1/cuota + margen equivale a
+    y >= margen * cuota (a cuota alta hace falta mas yield, porque un error
+    de unos puntos en la probabilidad pesa mas).
+    """
+    from config import MARGEN_VALUE
+    m = MARGEN_VALUE if margen is None else margen
+    if y is None or not cuota:
+        return False
+    return y > 0 and y >= m * cuota
+
+
+def icono_yield(y, cuota):
+    """🟢 value con margen · 🟡 yield positivo pero dentro del margen
+    (no fiable) · ⚪ neutro · 🔴 claramente negativo."""
+    if es_value(y, cuota):
+        return "🟢"
+    if y > 0:
+        return "🟡"
+    return "🔴" if y < -0.05 else "⚪"
+
+
 def badge_yield(y):
     if y > 0:
         return f"✅ +{y*100:.1f}%"
