@@ -155,6 +155,18 @@ MARGEN_VALUE = 0.05
 # son poco fiables (no cambia los calculos).
 MUESTRA_MIN_PARTIDOS = 6
 
+# Version del modelo. Se guarda en la columna "Modelo" de cada prediccion
+# registrada para poder comparar, en Seguimiento, el modelo anterior con el
+# nuevo. Las filas sin version son del modelo anterior (v1). Si vuelves a
+# recalibrar, sube la version (v3...) y anade sus parametros aqui.
+MODELO_VERSION = "v2"
+MODELOS = {
+    "v1": {"nombre": "Anterior (S=90, B=10, 180s sin ajustar)",
+           "S": 90.0, "B": 10.0, "peso_180": 1.0},
+    "v2": {"nombre": "Calibrado (S=50, B=8, 180s acercados a la media)",
+           "S": ELO_S, "B": ELO_B, "peso_180": LAMBDA_180_PESO_JUGADOR},
+}
+
 GRUPOS_DIAS = {
     "Grupo A": ["Grupo A Lunes", "Grupo A Martes", "Grupo A Miércoles"],
     "Grupo B": ["Grupo B Jueves", "Grupo B Viernes"],

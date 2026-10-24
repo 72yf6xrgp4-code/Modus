@@ -28,7 +28,7 @@ from stats_engine import (
     prob_victoria, prob_180s, quien_hace_mas_180s,
     handicaps_legs, legs_totales,
 )
-from config import SHEET_ID_PREDICCIONES
+from config import SHEET_ID_PREDICCIONES, MODELO_VERSION
 from helpers import safe_float
 
 # Las librerias de Google son opcionales: si no estan instaladas, el modulo
@@ -67,6 +67,7 @@ CABECERA = [
     "Prediccion",
     "Resultado real",
     "Acierto",
+    "Modelo",
 ]
 
 
@@ -288,6 +289,13 @@ def _abrir_hoja_predicciones(url_sheet=None):
         primera_fila = hoja.row_values(1)
         if not primera_fila:
             hoja.append_row(CABECERA)
+        elif "Modelo" not in primera_fila:
+            # Hoja anterior al cambio: anadir la columna "Modelo" al final.
+            # Las filas antiguas se quedan en blanco (= modelo v1).
+            col = len(primera_fila) + 1
+            if hoja.col_count < col:
+                hoja.add_cols(col - hoja.col_count)
+            hoja.update_cell(1, col, "Modelo")
     except Exception:
         pass
 
@@ -478,6 +486,10 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
         col_pred = columnas.index("Prediccion") + 1
     except (ValueError, Exception):
         col_fecha = col_prob = col_cuota = col_pred = None
+    try:
+        col_modelo = columnas.index("Modelo") + 1
+    except Exception:
+        col_modelo = None
 
     try:
         from zoneinfo import ZoneInfo
@@ -514,6 +526,9 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
                     gspread.Cell(fila, col_cuota, cuota))
                 celdas_actualizar.append(
                     gspread.Cell(fila, col_pred, m["prediccion"]))
+                if col_modelo is not None:
+                    celdas_actualizar.append(
+                        gspread.Cell(fila, col_modelo, MODELO_VERSION))
                 actualizadas += 1
             else:
                 # Nuevo: se anade como fila nueva.
@@ -531,6 +546,7 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
                     m["prediccion"],
                     "",   # Resultado real
                     "",   # Acierto
+                    MODELO_VERSION,
                 ])
                 # Lo registramos como existente por si se repite en el lote
                 filas_por_id[id_pred] = -1
@@ -624,6 +640,26 @@ def limpiar_predicciones(df):
     return df
 
 
+def mascara_caducadas(df, ahora=None):
+    """True en las predicciones que ya no se pueden verificar.
+
+    Las pestanas de jornada del Sheet solo guardan la semana en curso: al
+    empezar la semana nueva (lunes 03:00) se sobrescriben, asi que una
+    prediccion de una semana ya cerrada que sigue sin 'Acierto' no se va a
+    verificar nunca. Suele ser un partido registrado que no llego a jugarse
+    (un cruce de la Final que no se dio, un partido apuntado en el grupo o
+    el dia equivocado de madrugada...). No cuentan como pendientes.
+    """
+    if df is None or df.empty or "Fecha registro" not in df.columns:
+        return pd.Series(False, index=getattr(df, "index", None))
+    from helpers import inicio_semana_torneo
+    inicio = inicio_semana_torneo(ahora).replace(tzinfo=None)
+    fecha = pd.to_datetime(df["Fecha registro"].astype(str), errors="coerce")
+    sin_acierto = (df["Acierto"].astype(str).str.strip() == ""
+                   if "Acierto" in df.columns else True)
+    return sin_acierto & fecha.notna() & (fecha < inicio)
+
+
 def calcular_metricas(df):
     """Calcula las metricas de calidad del modelo a partir del DataFrame de
     predicciones. Solo usa las filas que tienen 'Acierto' relleno (es decir,
@@ -639,7 +675,7 @@ def calcular_metricas(df):
         calibracion:    lista de tramos con {rango, n, prob_media, real},
       }
     """
-    vacio = {"evaluadas": 0, "pendientes": 0, "aciertos": 0,
+    vacio = {"evaluadas": 0, "pendientes": 0, "caducadas": 0, "aciertos": 0,
              "tasa_acierto": 0.0, "brier": None, "calibracion": [],
              "por_mercado": []}
     if df is None or df.empty or "Acierto" not in df.columns:
@@ -663,13 +699,17 @@ def calcular_metricas(df):
         return vacio
     df["_acierto"] = df["Acierto"].apply(_norm_acierto)
 
-    # Separar las dos categorias
-    pendientes = int(df["_acierto"].isna().sum())
+    # Separar las categorias: pendientes de esta semana y caducadas (de
+    # semanas cerradas, ya no se pueden verificar)
+    caducadas_m = mascara_caducadas(df)
+    caducadas = int(caducadas_m.sum())
+    pendientes = int((df["_acierto"].isna() & ~caducadas_m).sum())
     # Solo 1 y 0 cuentan como evaluadas
     evaluadas_df = df[df["_acierto"].isin([0, 1])].copy()
     n_eval = len(evaluadas_df)
     if n_eval == 0:
         vacio["pendientes"] = pendientes
+        vacio["caducadas"] = caducadas
         return vacio
 
     # En evaluadas_df, _acierto solo tiene 0 y 1: lo forzamos a entero para
@@ -816,6 +856,7 @@ def calcular_metricas(df):
     return {
         "evaluadas": n_eval,
         "pendientes": pendientes,
+        "caducadas": caducadas,
         "aciertos": aciertos,
         "tasa_acierto": tasa,
         "brier": brier,
@@ -864,8 +905,9 @@ def listar_partidos_registrados(df):
             return "verificado"
         return "pendiente"  # vacio
 
+    caducada = mascara_caducadas(df)
     partidos = {}
-    for _, fila in df.iterrows():
+    for idx, fila in df.iterrows():
         j1 = str(fila.get("Jugador 1", "")).strip()
         j2 = str(fila.get("Jugador 2", "")).strip()
         jornada = str(fila.get("Jornada", "")).strip()
@@ -883,8 +925,10 @@ def listar_partidos_registrados(df):
                 "estados": [],
             }
         partidos[clave]["mercados"] += 1
-        partidos[clave]["estados"].append(
-            _estado_fila(fila.get("Acierto", "")))
+        estado_f = _estado_fila(fila.get("Acierto", ""))
+        if estado_f == "pendiente" and bool(caducada.get(idx, False)):
+            estado_f = "caducado"
+        partidos[clave]["estados"].append(estado_f)
 
     # Resolver el estado global de cada partido
     resultado = []
@@ -892,6 +936,9 @@ def listar_partidos_registrados(df):
         estados = set(p["estados"])
         if estados == {"verificado"}:
             estado = "✅ Verificado"
+        elif "pendiente" not in estados:
+            # Semana cerrada sin resultado: ya no se puede verificar
+            estado = "⌛ Caducado"
         else:
             # Si queda alguna fila sin verificar, el partido esta pendiente
             estado = "⏳ Pendiente"

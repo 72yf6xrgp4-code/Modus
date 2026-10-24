@@ -2374,12 +2374,20 @@ def render_tracking_predicciones(jugadores_resumen=None):
     evaluadas = metricas["evaluadas"]
     pendientes = metricas["pendientes"]
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Registradas", total_reg)
     c2.metric("Verificadas", evaluadas)
     c3.metric("Pendientes", pendientes,
-              help="Predicciones de partidos cuyo resultado aun no se ha "
+              help="Predicciones de esta semana cuyo resultado aun no se ha "
                    "verificado (se verificaran cuando el partido se juegue).")
+    c4.metric("Caducadas", metricas.get("caducadas", 0),
+              help="Predicciones de semanas ya cerradas que se quedaron sin "
+                   "verificar. Las pestanas de jornada solo guardan la semana "
+                   "en curso, asi que ya no se pueden comprobar. Casi siempre "
+                   "son partidos que no llegaron a jugarse (un cruce de la "
+                   "Final que no se dio, o un partido apuntado de madrugada "
+                   "en el grupo o el dia equivocado, fallo ya corregido). "
+                   "No cuentan en ninguna metrica.")
 
     if evaluadas == 0:
         st.info(
@@ -2539,6 +2547,9 @@ def render_tracking_predicciones(jugadores_resumen=None):
                 )
                 st.markdown(tabla, unsafe_allow_html=True)
 
+    # ── Comparativa modelo anterior / modelo nuevo ──────────────────────────
+    render_comparativa_modelos(df_pred)
+
     # ── Parte 4: lista de partidos registrados ───────────────────────────────
     # Una fila por partido (no por mercado), con su estado.
     if listar_partidos_registrados is not None:
@@ -2551,10 +2562,11 @@ def render_tracking_predicciones(jugadores_resumen=None):
             st.caption(
                 f"{len(lista)} partidos registrados. Cada partido incluye "
                 f"sus mercados. Estado: ✅ verificado, ⏳ pendiente de "
-                f"resultado."
+                f"resultado, ⌛ caducado (semana cerrada sin resultado)."
             )
             # Filtro opcional por estado
-            estados_disp = ["Todos", "✅ Verificado", "⏳ Pendiente"]
+            estados_disp = ["Todos", "✅ Verificado", "⏳ Pendiente",
+                            "⌛ Caducado"]
             filtro = st.selectbox("Filtrar por estado", estados_disp,
                                   key="trk_filtro_partidos")
             if filtro != "Todos":
@@ -2568,6 +2580,166 @@ def render_tracking_predicciones(jugadores_resumen=None):
                                      "Mercados", "Estado"]]
                 st.dataframe(df_lista, use_container_width=True,
                              hide_index=True)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _comparativa_cacheada(df_limpio):
+    from comparativa import comparar_retroactivo
+    return comparar_retroactivo(df_limpio)
+
+
+def render_comparativa_modelos(df_pred):
+    """Seguimiento: modelo anterior (v1) frente al calibrado (v2)."""
+    try:
+        from comparativa import (resumen_retroactivo, calibracion_retroactiva,
+                                 separar_por_modelo)
+        from config import MODELOS, MODELO_VERSION
+    except Exception as e:
+        st.caption(f"Comparativa de modelos no disponible ({e}).")
+        return
+
+    st.markdown("---")
+    st.markdown("### 🔬 Modelo anterior vs modelo nuevo")
+    st.caption(
+        f"**Antes** = {MODELOS['v1']['nombre']}. "
+        f"**Ahora** = {MODELOS[MODELO_VERSION]['nombre']}. "
+        "Brier y log-loss: cuanto más bajos, mejor (0,25 de Brier = tirar una "
+        "moneda). Acierto: % de veces que sale el lado que elige el modelo."
+    )
+    df_l = limpiar_predicciones(df_pred)
+    tab_retro, tab_vivo = st.tabs(["🔁 Mismos partidos (recalculados)",
+                                   "📡 Desde el cambio (en vivo)"])
+
+    with tab_retro:
+        with st.spinner("Recalculando los partidos con el modelo nuevo..."):
+            bt = _comparativa_cacheada(df_l)
+        tabla, glob = resumen_retroactivo(bt)
+        if tabla.empty:
+            st.info("Aún no hay partidos verificados del modelo anterior.")
+        else:
+            st.caption(
+                f"Los {glob['partidos']} partidos verificados del modelo "
+                "anterior, recalculados con el modelo nuevo a partir de los "
+                "datos que usó entonces. ⚠️ El modelo nuevo se ajustó con estos "
+                "mismos partidos, así que esta comparación le favorece: la "
+                "prueba de verdad es la pestaña *en vivo*."
+            )
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Líneas comparadas", f"{glob['lineas']:,}".replace(",", "."))
+            m2.metric("Brier global", f"{glob['brier_ahora']:.4f}",
+                      delta=f"{glob['brier_ahora'] - glob['brier_antes']:+.4f}",
+                      delta_color="inverse",
+                      help=f"Antes: {glob['brier_antes']:.4f}")
+            m3.metric("Acierto global", f"{glob['acierto_ahora']:.1f}%",
+                      delta=f"{glob['acierto_ahora'] - glob['acierto_antes']:+.1f} pts",
+                      help=f"Antes: {glob['acierto_antes']:.1f}%")
+
+            vista = tabla.copy()
+            vista["Mejora Brier"] = np.where(
+                vista["Brier antes"] > 0,
+                100 * (vista["Brier antes"] - vista["Brier ahora"])
+                / vista["Brier antes"], np.nan)
+            vista["Veredicto"] = [
+                ("🟢 mejor" if (b_n < b_o if b_n == b_n else l_n < l_o)
+                 else "🔴 peor")
+                for b_o, b_n, l_o, l_n in zip(vista["Brier antes"],
+                                              vista["Brier ahora"],
+                                              vista["Log-loss antes"],
+                                              vista["Log-loss ahora"])]
+            st.dataframe(
+                vista[["Mercado", "N", "Acierto antes", "Acierto ahora",
+                       "Brier antes", "Brier ahora", "Mejora Brier",
+                       "Log-loss antes", "Log-loss ahora", "Veredicto"]],
+                hide_index=True, use_container_width=True,
+                column_config={
+                    "Acierto antes": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Acierto ahora": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Brier antes": st.column_config.NumberColumn(format="%.4f"),
+                    "Brier ahora": st.column_config.NumberColumn(format="%.4f"),
+                    "Mejora Brier": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Log-loss antes": st.column_config.NumberColumn(format="%.3f"),
+                    "Log-loss ahora": st.column_config.NumberColumn(format="%.3f"),
+                })
+
+            mercados_cal = [m for m in ("Ganador", "Handicap legs",
+                                        "Total legs", "180s")
+                            if m in set(bt["mercado"])]
+            if mercados_cal:
+                st.markdown("**Calibración: lo que predice frente a lo que pasa**")
+                merc = st.segmented_control("Mercado", mercados_cal,
+                                            default=mercados_cal[0],
+                                            key="cmp_cal_mercado")
+                cal = calibracion_retroactiva(bt, merc or mercados_cal[0])
+                if not cal.empty:
+                    try:
+                        import altair as alt
+                        base = alt.Chart(cal)
+                        diag = alt.Chart(pd.DataFrame({"x": [50, 100], "y": [50, 100]})
+                                         ).mark_line(strokeDash=[4, 4], color="#9aa0a6"
+                                         ).encode(x="x", y="y")
+                        puntos = base.mark_line(point=True).encode(
+                            x=alt.X("Predicho:Q", title="Predicho (%)",
+                                    scale=alt.Scale(domain=[50, 100])),
+                            y=alt.Y("Real:Q", title="Ocurrió (%)",
+                                    scale=alt.Scale(domain=[0, 100])),
+                            color=alt.Color("Modelo:N", scale=alt.Scale(
+                                domain=["Antes", "Ahora"],
+                                range=["#9aa0a6", "#1f77b4"])),
+                            tooltip=["Modelo", "Tramo", "N",
+                                     alt.Tooltip("Predicho:Q", format=".1f"),
+                                     alt.Tooltip("Real:Q", format=".1f")])
+                        st.altair_chart((diag + puntos).properties(height=300),
+                                        use_container_width=True)
+                        st.caption("Cuanto más cerca de la diagonal, mejor "
+                                   "calibrado.")
+                    except Exception:
+                        pass
+                    st.dataframe(cal, hide_index=True, use_container_width=True,
+                                 column_config={
+                                     "Predicho": st.column_config.NumberColumn(format="%.1f%%"),
+                                     "Real": st.column_config.NumberColumn(format="%.1f%%")})
+
+    with tab_vivo:
+        grupos = separar_por_modelo(df_l)
+        nuevo = grupos.get(MODELO_VERSION)
+        m_nuevo = calcular_metricas(nuevo) if nuevo is not None else None
+        if m_nuevo is None or m_nuevo["evaluadas"] == 0:
+            st.info(
+                "📡 Todavía no hay predicciones verificadas del modelo nuevo. "
+                "Desde que subas esta versión, cada partido registrado se "
+                f"marca como **{MODELO_VERSION}** en la columna *Modelo* de la "
+                "hoja y aquí irán apareciendo sus resultados reales al lado "
+                "de los del modelo anterior."
+            )
+            return
+        filas = []
+        for v, sub in grupos.items():
+            m = calcular_metricas(sub)
+            if m["evaluadas"] == 0:
+                continue
+            fila = {"Modelo": f"{v} · {MODELOS.get(v, {}).get('nombre', '')}",
+                    "Verificadas": m["evaluadas"],
+                    "Acierto": m["tasa_acierto"],
+                    "Brier": m["brier"]}
+            for pm in m["por_mercado"]:
+                fila[pm["mercado"]] = pm["tasa"]
+            filas.append(fila)
+        tabla_v = pd.DataFrame(filas)
+        if m_nuevo["evaluadas"] < 300:
+            st.warning(
+                f"⚠️ El modelo nuevo solo lleva {m_nuevo['evaluadas']} "
+                "predicciones verificadas (unos "
+                f"{max(1, m_nuevo['evaluadas'] // 14)} partidos). Hasta tener "
+                "varias semanas, las diferencias pueden ser ruido."
+            )
+        st.dataframe(
+            tabla_v, hide_index=True, use_container_width=True,
+            column_config={c: st.column_config.NumberColumn(format="%.1f%%")
+                           for c in tabla_v.columns
+                           if c not in ("Modelo", "Verificadas", "Brier")}
+            | {"Brier": st.column_config.NumberColumn(format="%.4f")})
+        st.caption("Acierto por mercado en %. El Brier del modelo nuevo debería "
+                   "quedar por debajo del anterior.")
 
 
 def render_historico(df_hist, jugadores_resumen=None):
