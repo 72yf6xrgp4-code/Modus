@@ -494,7 +494,8 @@ def main():
             continue
         try:
             res = registrar_predicciones(
-                "", [(j1_data, j2_data)], semana, jornada
+                "", [(j1_data, j2_data)], semana, jornada,
+                fuente="Forma reciente"
             )
             if res.get("ok"):
                 registrados_ok.append(f"{p['j1']} vs {p['j2']}")

@@ -205,24 +205,38 @@ def pct(p):
 def calcular_yield(prob, cuota_bookie):
     return (prob * cuota_bookie) - 1
 
-def es_value(y, cuota, margen=None):
+def margen_mercado(mercado=None):
+    """Margen de seguridad del value para un mercado (por la key de su
+    casilla de cuota: 'vic_j1', 'legs_mas', '180_j1_05'...). Si no se
+    reconoce, el general MARGEN_VALUE."""
+    from config import MARGEN_VALUE, MARGEN_POR_MERCADO
+    if mercado:
+        for prefijo, m in MARGEN_POR_MERCADO.items():
+            if str(mercado).startswith(prefijo):
+                return m
+    return MARGEN_VALUE
+
+
+def es_value(y, cuota, margen=None, mercado=None):
     """True si la apuesta es value con margen de seguridad.
 
     y = prob * cuota - 1. Exigir prob >= 1/cuota + margen equivale a
     y >= margen * cuota (a cuota alta hace falta mas yield, porque un error
-    de unos puntos en la probabilidad pesa mas).
+    de unos puntos en la probabilidad pesa mas). El margen depende del
+    mercado (MARGEN_POR_MERCADO en config.py).
     """
-    from config import MARGEN_VALUE
-    m = MARGEN_VALUE if margen is None else margen
+    m = margen_mercado(mercado) if margen is None else margen
     if y is None or not cuota:
         return False
-    return y > 0 and y >= m * cuota
+    # 1e-9: que justo en el limite (p. ej. 58 % a cuota 2,00 con margen 8)
+    # cuente como value pese al redondeo de los decimales
+    return y > 0 and y >= m * cuota - 1e-9
 
 
-def icono_yield(y, cuota):
+def icono_yield(y, cuota, mercado=None):
     """🟢 value con margen · 🟡 yield positivo pero dentro del margen
     (no fiable) · ⚪ neutro · 🔴 claramente negativo."""
-    if es_value(y, cuota):
+    if es_value(y, cuota, mercado=mercado):
         return "🟢"
     if y > 0:
         return "🟡"

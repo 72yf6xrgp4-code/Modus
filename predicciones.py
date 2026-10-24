@@ -71,6 +71,64 @@ CABECERA = [
     "Modelo",
 ]
 
+# Datos de entrada con los que se calculo cada prediccion (los dos jugadores).
+# Se guardan para poder comprobar mas adelante si otras estadisticas (promedio
+# de dardos, checkout, legs por partido...) mejoran el modelo: con solo las
+# probabilidades no se puede saber.
+# (nombre de columna, clave en el dict del jugador, decimales)
+CAMPOS_ENTRADA = [
+    ("PR", "PR", 2),
+    ("180s/partido", "lam_180", 3),
+    ("Legs/partido", "lam_legs", 2),
+    ("Promedio", "promedio_dardos", 2),
+    ("Checkout %", "checkouts", 1),
+    ("% Victorias", "pct_victorias", 1),
+    ("Volatilidad", "volatilidad", 2),
+    ("Partidos", "n_partidos", 0),
+]
+COLUMNAS_ENTRADA = ([f"{j} {col}" for j in ("J1", "J2")
+                     for col, _, _ in CAMPOS_ENTRADA] + ["Fuente datos"])
+CABECERA = CABECERA + COLUMNAS_ENTRADA
+
+
+def _valor_entrada(jugador, clave, decimales):
+    """Valor numerico de una estadistica del jugador para guardarlo en la
+    hoja ('' si falta o no es un numero)."""
+    try:
+        x = float(jugador.get(clave))
+    except Exception:
+        return ""
+    if x != x or x in (float("inf"), float("-inf")):
+        return ""
+    return int(round(x)) if decimales == 0 else round(x, decimales)
+
+
+def valores_entrada(j1_data, j2_data, fuente=""):
+    """{columna: valor} con los datos de entrada de un partido."""
+    out = {}
+    for prefijo, jug in (("J1", j1_data), ("J2", j2_data)):
+        for col, clave, dec in CAMPOS_ENTRADA:
+            out[f"{prefijo} {col}"] = _valor_entrada(jug or {}, clave, dec)
+    out["Fuente datos"] = fuente or ""
+    return out
+
+
+def _asegurar_cabecera(hoja, deseadas):
+    """Anade al final de la fila 1 las columnas de 'deseadas' que falten.
+    Devuelve la cabecera final. Las filas antiguas quedan en blanco en las
+    columnas nuevas."""
+    actual = hoja.row_values(1)
+    faltan = [c for c in deseadas if c not in actual]
+    if not faltan:
+        return actual
+    total = len(actual) + len(faltan)
+    if hoja.col_count < total:
+        hoja.add_cols(total - hoja.col_count)
+    hoja.update_cells(
+        [gspread.Cell(1, len(actual) + 1 + i, c) for i, c in enumerate(faltan)],
+        value_input_option="RAW")
+    return actual + faltan
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONEXION A GOOGLE SHEETS
@@ -290,13 +348,11 @@ def _abrir_hoja_predicciones(url_sheet=None):
         primera_fila = hoja.row_values(1)
         if not primera_fila:
             hoja.append_row(CABECERA)
-        elif "Modelo" not in primera_fila:
-            # Hoja anterior al cambio: anadir la columna "Modelo" al final.
-            # Las filas antiguas se quedan en blanco (= modelo v1).
-            col = len(primera_fila) + 1
-            if hoja.col_count < col:
-                hoja.add_cols(col - hoja.col_count)
-            hoja.update_cell(1, col, "Modelo")
+        elif any(c not in primera_fila for c in CABECERA):
+            # Hoja anterior a algun cambio: anadir las columnas que falten
+            # ("Modelo", datos de entrada...) al final. Las filas antiguas se
+            # quedan en blanco en ellas (Modelo en blanco = v1).
+            _asegurar_cabecera(hoja, CABECERA)
     except Exception:
         pass
 
@@ -423,7 +479,8 @@ def _id_prediccion(semana, j1, j2, mercado, linea):
 # REGISTRO DE PREDICCIONES (ESCRITURA EN LOTE)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
+def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada="",
+                           fuente=""):
     """Registra en la hoja 'Predicciones' todos los mercados de los
     enfrentamientos indicados.
 
@@ -439,6 +496,13 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
                         jugador de cada partido.
       semana:           identificador de la semana/jornada (string).
       jornada:          texto descriptivo (ej. "Grupo A Lunes").
+      fuente:           de donde salen los datos de los jugadores ("Forma
+                        reciente", "Resumen Semanal"...). Se guarda junto a
+                        los datos de entrada.
+
+    Ademas de la prediccion se guardan los datos de entrada de los dos
+    jugadores (PR, 180s, legs por partido, promedio, checkout...): ver
+    COLUMNAS_ENTRADA.
 
     Devuelve un dict con el resumen:
       {ok, nuevas, actualizadas, total, error}
@@ -478,19 +542,19 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
     except Exception:
         filas_por_id = {}
 
-    # Indice de columnas (para las actualizaciones de filas existentes)
+    # Cabecera real de la hoja: las filas nuevas se escriben en ese orden y
+    # las actualizaciones buscan ahi su columna.
     try:
-        columnas = hoja.row_values(1)
-        col_fecha = columnas.index("Fecha registro") + 1
-        col_prob = columnas.index("Probabilidad modelo") + 1
-        col_cuota = columnas.index("Cuota justa") + 1
-        col_pred = columnas.index("Prediccion") + 1
-    except (ValueError, Exception):
-        col_fecha = col_prob = col_cuota = col_pred = None
-    try:
-        col_modelo = columnas.index("Modelo") + 1
+        columnas = hoja.row_values(1) or list(CABECERA)
     except Exception:
-        col_modelo = None
+        columnas = list(CABECERA)
+    pos = {c: i + 1 for i, c in enumerate(columnas)}
+    col_prob = pos.get("Probabilidad modelo")
+    # Columnas que se reescriben al volver a registrar un partido
+    # (Resultado real y Acierto nunca se tocan)
+    COLS_ACTUALIZABLES = (["Fecha registro", "Probabilidad modelo",
+                           "Cuota justa", "Prediccion", "Modelo"]
+                          + COLUMNAS_ENTRADA)
 
     try:
         from zoneinfo import ZoneInfo
@@ -507,6 +571,7 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
         nombre_j1 = j1_data.get("nombre_original", "?")
         nombre_j2 = j2_data.get("nombre_original", "?")
         mercados = calcular_mercados_partido(j1_data, j2_data)
+        entrada = valores_entrada(j1_data, j2_data, fuente)
 
         for m in mercados:
             total += 1
@@ -515,40 +580,36 @@ def registrar_predicciones(url_sheet, enfrentamientos, semana, jornada=""):
             prob = m["prob"]
             cuota = round(1.0 / prob, 2) if prob > 0 else ""
 
-            if id_pred in filas_por_id and col_prob is not None:
+            valores = {
+                "ID": id_pred,
+                "Semana": str(semana),
+                "Fecha registro": fecha_reg,
+                "Jornada": jornada,
+                "Jugador 1": nombre_j1,
+                "Jugador 2": nombre_j2,
+                "Mercado": m["mercado"],
+                "Linea": m["linea"],
+                "Probabilidad modelo": round(prob, 4),
+                "Cuota justa": cuota,
+                "Prediccion": m["prediccion"],
+                "Resultado real": "",
+                "Acierto": "",
+                "Modelo": MODELO_VERSION,
+            }
+            valores.update(entrada)
+
+            fila = filas_por_id.get(id_pred, 0)
+            if fila > 0 and col_prob is not None:
                 # Ya existe: SOBRESCRIBIR los datos de la prediccion.
                 # No se tocan Resultado real ni Acierto.
-                fila = filas_por_id[id_pred]
-                celdas_actualizar.append(
-                    gspread.Cell(fila, col_fecha, fecha_reg))
-                celdas_actualizar.append(
-                    gspread.Cell(fila, col_prob, round(prob, 4)))
-                celdas_actualizar.append(
-                    gspread.Cell(fila, col_cuota, cuota))
-                celdas_actualizar.append(
-                    gspread.Cell(fila, col_pred, m["prediccion"]))
-                if col_modelo is not None:
-                    celdas_actualizar.append(
-                        gspread.Cell(fila, col_modelo, MODELO_VERSION))
+                for c in COLS_ACTUALIZABLES:
+                    if c in pos:
+                        celdas_actualizar.append(
+                            gspread.Cell(fila, pos[c], valores[c]))
                 actualizadas += 1
-            else:
-                # Nuevo: se anade como fila nueva.
-                filas_nuevas.append([
-                    id_pred,
-                    str(semana),
-                    fecha_reg,
-                    jornada,
-                    nombre_j1,
-                    nombre_j2,
-                    m["mercado"],
-                    m["linea"],
-                    round(prob, 4),
-                    cuota,
-                    m["prediccion"],
-                    "",   # Resultado real
-                    "",   # Acierto
-                    MODELO_VERSION,
-                ])
+            elif fila == 0:
+                # Nuevo: se anade como fila nueva, en el orden de la cabecera.
+                filas_nuevas.append([valores.get(c, "") for c in columnas])
                 # Lo registramos como existente por si se repite en el lote
                 filas_por_id[id_pred] = -1
 
@@ -712,8 +773,15 @@ def archivar_caducadas(url_sheet=None, ahora=None):
                                value_input_option="RAW")
         sello = (ahora or datetime.now(ZoneInfo("Europe/Madrid"))).strftime(
             "%Y-%m-%d %H:%M")
-        archivo.append_rows([datos[i][:ancho] + [sello] for i in indices],
-                            value_input_option="RAW")
+        # Alinear por nombre de columna (la hoja principal puede tener mas
+        # columnas que cuando se creo el archivo)
+        cab_arch = _asegurar_cabecera(archivo, cab + ["Archivada"])
+        filas_arch = []
+        for i in indices:
+            d = dict(zip(cab, datos[i][:ancho]))
+            d["Archivada"] = sello
+            filas_arch.append([d.get(c, "") for c in cab_arch])
+        archivo.append_rows(filas_arch, value_input_option="RAW")
     except Exception as e:
         return {"ok": False, "movidas": 0, "partidos": partidos,
                 "error": f"No se pudieron copiar al archivo (no se ha "

@@ -151,6 +151,24 @@ LAMBDA_180_MEDIA_TORNEO = 0.95   # 180s por partido de un jugador medio
 # que un yield de +2 % no es fiable. 0 = cualquier yield positivo (como antes).
 MARGEN_VALUE = 0.05
 
+# Margen por mercado (sustituye a MARGEN_VALUE donde se indica). Sale del
+# seguimiento (598 partidos, prediccion sin ver la semana evaluada): error de
+# calibracion del modelo con un 90 % de confianza, sin bajar nunca de 5 puntos.
+#   - Ganador: ~5 puntos de media y ~6 en los extremos (con favoritos muy
+#     claros el modelo se pasa un poco de confianza) -> 6.
+#   - Total legs: ~6 de media y ~8 en los extremos, y el modelo apenas sabe
+#     mas que la frecuencia media de partidos largos -> 8.
+#   - Handicaps (~4), 180s de cada jugador (~2,5), total de 180s (~4) y quien
+#     hace mas 180s (~3,5) estan por debajo de 5 -> se quedan en 5.
+# Claves = principio de la key de la casilla de cuota en Value Bets.
+MARGEN_POR_MERCADO = {
+    "vic_": 0.06,    # Ganador
+    "hcap_": 0.05,   # Handicaps de legs
+    "legs_": 0.08,   # Total de legs
+    "180_": 0.05,    # 180s (de cada jugador y totales)
+    "mas_": 0.05,    # Quien hace mas 180s
+}
+
 # Por debajo de estos partidos jugados se avisa de que los datos del jugador
 # son poco fiables (no cambia los calculos).
 MUESTRA_MIN_PARTIDOS = 6
