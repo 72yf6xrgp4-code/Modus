@@ -36,9 +36,12 @@ st.markdown("""
     margin: 10px 0 20px 0;
 }
 /* Menos hueco arriba y titulos que no ocupen dos lineas en el movil */
-.block-container { padding-top: 3.5rem; }
+.block-container { padding-top: 3.9rem; }
+/* Los bloques que solo cargan estilos no ocupan sitio (cada uno metia un hueco) */
+[data-testid=stElementContainer]:has([data-testid=stMarkdownContainer] > style:only-child){display:none}
+.block-container h1{padding-top:.25rem!important}
 @media (max-width: 768px) {
-    .block-container { padding-top: 3rem; padding-left: 1rem; padding-right: 1rem; }
+    .block-container { padding-top: 3.9rem; padding-left: 1rem; padding-right: 1rem; }
     h1 { font-size: 1.75rem !important; }
     h2 { font-size: 1.4rem !important; }
     h3 { font-size: 1.2rem !important; }
@@ -59,6 +62,7 @@ from data_loading import cargar_todo, get_jornada_actual, get_proxima_jornada
 from helpers import pintar_partidos, es_admin, render_acceso_admin
 from rendering import (
     render_jugador_visual, render_value_bets, render_small_multiples,
+    render_tarjetas_jugadores,
     selector_jornada, render_tracking_predicciones, render_historico,
 )
 from clasificacion import (
@@ -80,32 +84,42 @@ if "last_update" not in st.session_state:
     st.session_state.last_update = {}
 
 
-st.sidebar.title("🎯 MODUS SUPER SERIES")
+# ── Barra lateral: marca, estado de la jornada y herramientas ──────────────
+st.sidebar.markdown(
+    "<div class='sb-marca'><span class='sb-logo'>🎯</span>Modus Super Series</div>",
+    unsafe_allow_html=True)
 
-# ── Estado de la jornada actual ─────────────────────────────────────────
-# Mostramos un indicador del estado del torneo en este momento, para tener
-# contexto sin necesidad de cambiar de seccion. Si la deteccion falla, no
-# mostramos nada — no rompemos el sidebar por un error de carga.
+# Estado del torneo en este momento (en juego / esperando datos / proxima
+# jornada con cuenta atras). Si la deteccion falla, no se muestra nada.
 try:
     from data_loading import estado_jornada_sidebar as _est
+    from rendering import calcular_tiempo_restante as _faltan
     _e = _est()
+    _esc = lambda x: html_mod.escape(str(x or ""))
     if _e["estado"] == "ACTIVA":
-        st.sidebar.success(f"📅 Hoy: **{_e['jornada']}**")
+        _html_estado = (
+            "<div class='sb-estado'><div class='sb-k'>"
+            "<span class='sb-dot on'></span>En juego</div>"
+            f"<div class='sb-j'>{_esc(_e['jornada'])}</div></div>")
     elif _e["estado"] == "PENDIENTE":
-        st.sidebar.warning(
-            f"📅 Hoy: **{_e['jornada']}**\n\n"
-            f"⏳ Esperando datos del Sheet..."
-        )
+        _html_estado = (
+            "<div class='sb-estado'><div class='sb-k'>"
+            "<span class='sb-dot wait'></span>Hoy · esperando datos</div>"
+            f"<div class='sb-j'>{_esc(_e['jornada'])}</div>"
+            "<div class='sb-h'>El Sheet aún no tiene los partidos</div></div>")
     else:  # SIN_JORNADA
-        st.sidebar.info(
-            f"📅 Sin jornada activa\n\n"
-            f"⏭️ Próxima: **{_e['proxima_nombre']}**\n\n"
-            f"🕒 {_e['proxima_dia']} a las {_e['proxima_hora']}"
-        )
+        _rest = _faltan(_e.get("proxima_dia"), _e.get("proxima_hora"))
+        _html_estado = (
+            "<div class='sb-estado'><div class='sb-k'>"
+            "<span class='sb-dot'></span>Próxima jornada</div>"
+            f"<div class='sb-j'>{_esc(_e.get('proxima_nombre'))}</div>"
+            f"<div class='sb-h'>{_esc(_e.get('proxima_dia'))} · "
+            f"{_esc(_e.get('proxima_hora'))}</div>"
+            + (f"<span class='sb-falta'>Faltan {_esc(_rest)}</span>" if _rest else "")
+            + "</div>")
+    st.sidebar.markdown(_html_estado, unsafe_allow_html=True)
 except Exception:
     pass
-
-st.sidebar.markdown("---")
 
 # ── Menu de secciones: barra de botones arriba del todo ──────────────────
 # Antes era un radio en la barra lateral: en el movil la barra tapaba la
@@ -131,8 +145,9 @@ if not opcion_principal:
     opcion_principal = st.session_state.get("_ultima_seccion", SECCIONES[0])
 st.session_state["_ultima_seccion"] = opcion_principal
 
-# Aspecto del menu: pildoras arriba (fijas al bajar por la pagina) y, en el
-# movil, barra fija abajo como en una app, con la seccion activa en rojo.
+# Aspecto del menu: pildoras arriba, fijas al bajar por la pagina. En el movil,
+# barra flotante abajo con las 5 secciones (icono encima del nombre) y la activa
+# en una pildora roja.
 st.markdown("""
 <style>
 [data-testid=stHeader]{background:#fff}
@@ -154,42 +169,145 @@ st.markdown("""
   .st-key-seccion button[aria-checked=false]:hover{border-color:#cbd5e1!important;
     background:#f1f5f9!important}
 }
+/* ── Barra lateral ── */
+.sb-marca{display:flex;align-items:center;gap:.5rem;font-weight:800;font-size:1.12rem;
+  color:#0f172a;white-space:nowrap;letter-spacing:-.01em;margin:.1rem 0 .9rem}
+.sb-logo{font-size:1.35rem}
+.sb-estado{background:#fff;border:1px solid #e2e8f0;border-radius:14px;
+  padding:.8rem .9rem;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.sb-k{display:flex;align-items:center;gap:.45rem;font-size:.68rem;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:#64748b}
+.sb-dot{width:8px;height:8px;border-radius:50%;background:#94a3b8;flex:0 0 auto}
+.sb-dot.on{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.sb-dot.wait{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18)}
+.sb-j{font-weight:700;font-size:1.02rem;color:#0f172a;margin-top:.3rem}
+.sb-h{font-size:.84rem;color:#475569;margin-top:.1rem}
+.sb-falta{display:inline-block;margin-top:.6rem;background:#fff1f1;color:#e11d48;
+  font-weight:700;font-size:.78rem;border-radius:999px;padding:.18rem .65rem}
+.sb-etq{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:#94a3b8;margin:1.1rem 0 0!important}
+/* botones de la barra a todo el ancho con CSS (el parametro width= de
+   st.button no existe antes de Streamlit 1.47) */
+.st-key-sb_refrescar,.st-key-sb_script{width:100%!important}
+.st-key-sb_refrescar [data-testid=stButton],.st-key-sb_script [data-testid=stButton],
+.st-key-sb_refrescar button,.st-key-sb_script button{width:100%}
+/* ── Tarjetas de jugadores ── */
+[class*="st-key-pcard_"]{border-radius:16px!important;border-color:#e2e8f0!important;
+  background:#fff;padding:.85rem .95rem .2rem!important;gap:.35rem!important}
+.pc-top{display:flex;align-items:center;gap:.6rem}
+.pc-pos{width:1.65rem;height:1.65rem;border-radius:50%;background:#f1f5f9;color:#475569;
+  font-weight:700;font-size:.8rem;display:flex;align-items:center;justify-content:center;
+  flex:0 0 auto}
+.pc-pos.top1{background:#fef3c7;color:#92400e}
+.pc-nom{font-weight:700;font-size:1.02rem;color:#0f172a;flex:1 1 auto;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-pr{font-weight:800;font-size:.95rem;border-radius:999px;padding:.15rem .6rem;
+  flex:0 0 auto;white-space:nowrap}
+.pc-pr small{font-weight:700;font-size:.62rem;opacity:.7;margin-left:.25rem}
+.pr-alto{background:#dcfce7;color:#166534}.pr-medio{background:#ecfccb;color:#3f6212}
+.pr-bajo{background:#fef3c7;color:#92400e}.pr-muybajo{background:#fee2e2;color:#991b1b}
+.pr-nd{background:#f1f5f9;color:#94a3b8}
+.pc-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem;
+  margin-top:.7rem}
+.pc-stats div{background:#f8fafc;border-radius:10px;padding:.45rem .25rem;text-align:center}
+.pc-stats b{display:block;font-size:1rem;color:#0f172a}
+.pc-stats span{display:block;font-size:.66rem;color:#64748b;margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-vacio{margin-top:.6rem;font-size:.85rem;color:#94a3b8}
+[class*="st-key-pcard_"] [data-testid=stExpander] details{border:0!important;
+  background:transparent!important}
+[class*="st-key-pcard_"] [data-testid=stExpander] summary{padding:.35rem 0!important;
+  color:#64748b;background:transparent!important}
+[class*="st-key-pcard_"] [data-testid=stExpander] summary:hover{color:#ff4b4b}
+[class*="st-key-pcard_"] [data-testid=stExpander] summary p{font-size:.85rem}
+/* el detalle completo, dentro de una tarjeta de media pantalla: 2 columnas */
+[class*="st-key-pcard_"] .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* misma separacion entre tarjetas en horizontal y en vertical (tambien
+   apiladas en el movil) */
+[data-testid=stHorizontalBlock]:has([class*="st-key-pcard_"]){gap:1rem!important}
+/* st.markdown resta 1rem por debajo (pensado para el margen de los <p>);
+   en estos bloques propios montaba la etiqueta sobre lo que tiene debajo */
+[data-testid=stMarkdownContainer]:has(.pc),
+[data-testid=stMarkdownContainer]:has(.modus-etq){margin-bottom:0!important}
+[data-testid=stMarkdownContainer]:has(.sb-etq){margin-bottom:-.55rem!important}
+/* ── Selector de jornada (Resultados y Value Bets) ── */
+.st-key-res_jornada{background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;
+  padding:.8rem 1rem .35rem;gap:.55rem!important;margin-bottom:.4rem}
+.modus-etq{font-size:.72rem;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:#64748b;margin:0}
+/* Grupos: control segmentado en una sola fila, el activo en blanco */
+[class*="_seg_grupo_"]{width:100%!important}
+[class*="_seg_grupo_"] [data-testid=stButtonGroup]{width:100%}
+[class*="_seg_grupo_"] [role=radiogroup]{display:flex;flex-wrap:nowrap;width:100%;
+  max-width:none!important;gap:2px;background:#e8edf4;border-radius:12px;padding:3px}
+[class*="_seg_grupo_"] button[role=radio]{flex:1 1 0;min-width:0;border:0!important;
+  border-radius:10px!important;background:transparent!important;color:#475569!important;
+  padding:.42rem .2rem!important;box-shadow:none!important;min-height:2.4rem}
+[class*="_seg_grupo_"] button[role=radio] p{font-weight:600;white-space:nowrap}
+[class*="_seg_grupo_"] button[aria-checked=true]{background:#fff!important;
+  color:#0f172a!important;box-shadow:0 1px 3px rgba(15,23,42,.18)!important}
+[class*="_seg_grupo_"] button[aria-checked=true] [data-testid=stIconMaterial]{color:#f59e0b}
+/* Dias: pestanas con linea roja en el activo */
+[class*="_seg_dia_"]{width:100%!important}
+[class*="_seg_dia_"] [role=radiogroup]{display:flex;gap:1.25rem;max-width:none!important;
+  width:100%;border-bottom:1px solid #e2e8f0}
+[class*="_seg_dia_"] button[role=radio]{border:0!important;border-radius:0!important;
+  background:transparent!important;box-shadow:none!important;min-height:2.2rem;
+  padding:.3rem .1rem!important;border-bottom:2px solid transparent!important;
+  margin-bottom:-1px;color:#64748b!important}
+[class*="_seg_dia_"] button[aria-checked=true]{color:#ff4b4b!important;
+  border-bottom-color:#ff4b4b!important}
+[class*="_seg_dia_"] button[aria-checked=true] p{font-weight:700}
+@media (hover:hover){
+  [class*="_seg_grupo_"] button[aria-checked=false]:hover{color:#0f172a!important;
+    background:rgba(255,255,255,.55)!important}
+  [class*="_seg_dia_"] button[aria-checked=false]:hover{color:#0f172a!important}
+}
 @media (max-width:640px){
-  .st-key-seccion{position:fixed!important;left:0;right:0;bottom:0;top:auto!important;
-    z-index:999990;margin:0!important;
-    padding:.35rem .35rem calc(.35rem + env(safe-area-inset-bottom))!important;
-    border-top:1px solid #e5e7eb;box-shadow:0 -6px 18px rgba(15,23,42,.08)}
+  .st-key-res_jornada{padding:.7rem .7rem .3rem}
+  [class*="_seg_grupo_"] button[role=radio] p{font-size:.8rem}
+}
+@media (max-width:640px){
+  /* En el movil, barra flotante abajo, elevada por encima de los botones de
+     Streamlit Cloud de la esquina inferior derecha (pegada al borde quedaba
+     tapada por ellos). */
+  .st-key-seccion{position:fixed!important;left:.6rem;right:.6rem;top:auto!important;
+    bottom:3.75rem;width:auto!important;max-width:none!important;
+    z-index:999990;margin:0!important;padding:.3rem!important;border-radius:22px;
+    border:1px solid #e5e7eb;box-shadow:0 10px 30px rgba(15,23,42,.18);
+    background:rgba(255,255,255,.97)}
   .st-key-seccion [role=radiogroup]{gap:.2rem;overflow:visible}
   .st-key-seccion button[role=radio]{flex:1 1 0;min-width:0;height:auto!important;
-    min-height:3.3rem;padding:.35rem 0!important;border:0!important;
+    min-height:3.1rem;padding:.3rem 0!important;border:0!important;
     background:transparent!important;color:#64748b!important;overflow:visible!important}
   .st-key-seccion button[role=radio] span[data-has-shortcut]{flex-direction:column;gap:1px}
   .st-key-seccion button[role=radio] p{font-size:.68rem}
   .st-key-seccion button[aria-checked=true]{background:#ff4b4b!important;
     color:#fff!important;border-radius:16px!important;
     box-shadow:0 3px 8px rgba(255,75,75,.30)!important}
-  .block-container{padding-bottom:6rem!important}
+  /* hueco al final para que la barra no tape lo ultimo de la pagina */
+  .block-container{padding-bottom:9rem!important}
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔄 Actualización")
-st.sidebar.caption("Caché: 30 segundos")
-
-if st.sidebar.button("♻️ Forzar Refresh", help="Recarga inmediata"):
+st.sidebar.markdown("<p class='sb-etq'>Datos</p>", unsafe_allow_html=True)
+if st.sidebar.button("Refrescar datos", icon=":material/refresh:",
+                     key="sb_refrescar",
+                     help="Recarga ya los datos del Sheet"):
     st.cache_data.clear()
     st.session_state.last_update = {}
     st.rerun()
+st.sidebar.caption("Se refrescan al navegar, cada 30 s.")
 
-st.sidebar.markdown("---")
 render_acceso_admin()
 
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyF0-GxHiaX4NW55-2UJt39a9V_aJhGXahq5NL5z2szpbFd7RdtKtr5ww7r852RAm2f/exec"
 
-if es_admin():
-    st.sidebar.markdown("### ⚙️ Ejecutar Script")
-if es_admin() and st.sidebar.button("▶️ Ejecutar Actualización", help="Ejecuta el script de actualización de datos"):
+if es_admin() and st.sidebar.button(
+        "Ejecutar actualización", icon=":material/play_arrow:",
+        key="sb_script",
+        help="Lanza el script de Google que actualiza los datos del Sheet"):
     with st.sidebar.spinner("🔄 Ejecutando script..."):
         try:
             # Intentar con GET primero (más compatible con Apps Script)
@@ -214,8 +332,6 @@ if es_admin() and st.sidebar.button("▶️ Ejecutar Actualización", help="Ejec
         except Exception as e:
             st.sidebar.error(f"❌ Error: {str(e)}")
             st.sidebar.info("📝 Verifica que el script esté publicado como web app")
-
-st.sidebar.divider()
 
 if "🔴 LIVE" in opcion_principal:
     st.title("🔴 LIVE")
@@ -327,17 +443,11 @@ if "🔴 LIVE" in opcion_principal:
             st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
 
         st.subheader("📈 Estadísticas por Jugador")
-        for player, stats in d2.items():
-            player_display = f"👤 {player.title()}"
-            with st.expander(player_display, expanded=False):
-                # Racha: ultimos 5 partidos de la jornada activa
-                jornada_para_racha = None if selected == "Resumen Semanal" else selected
-                render_jugador_visual(
-                    player, stats, stats_resumen_para_render, selected,
-                    mostrar_tendencias=mostrar_tendencias_live,
-                    mostrar_racha=True,
-                    jornada_racha=jornada_para_racha
-                )
+        render_tarjetas_jugadores(
+            d2, stats_resumen_para_render, selected,
+            mostrar_tendencias=mostrar_tendencias_live,
+            jornada_racha=None if selected == "Resumen Semanal" else selected,
+            key_prefix="pcard_live")
 
         if d1 is not None:
             st.subheader("⚔️ Detalles")
@@ -417,17 +527,20 @@ elif "💰 VALUE BETS" in opcion_principal:
 
 elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
     st.title("📊 RESULTADOS Y ESTADÍSTICAS")
-    with st.expander("⚙️ Configuración", expanded=True):
-        st.markdown("**📂 Selecciona jornada**")
+    # Selector de jornada en una tarjeta compacta (antes iba dentro de un
+    # desplegable "Configuración" con titulo propio y una linea debajo)
+    caja_jornada = st.container(key="res_jornada")
+    with caja_jornada:
+        st.markdown("<p class='modus-etq'>Jornada</p>", unsafe_allow_html=True)
         selected = selector_jornada("res", incluir_resumen=True,
                                     modo_forma_reciente=False)
     selected_url = URLS[selected]
-    st.markdown("---")
     d1, d2 = cargar_todo(selected_url, selected, CORTES.get(selected, 2))
-    
+
     if selected in st.session_state.last_update:
         tiempo = (datetime.now() - st.session_state.last_update[selected]).seconds
-        st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
+        with caja_jornada:
+            st.caption(f":material/schedule: Datos actualizados hace {tiempo} s")
     
     # ¿Hay datos de jugadores en esta jornada?
     hay_datos = d2 is not None and len(d2) > 0
@@ -441,12 +554,11 @@ elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
         if mostrar_tendencias:
             _, stats_resumen = cargar_todo(URLS["Resumen Semanal"], "Resumen Semanal", CORTES.get("Resumen Semanal", 2))
 
-        for player, stats in d2.items():
-            player_display = f"👤 {player.title()}"
-            with st.expander(player_display, expanded=False):
-                # Racha: ultimos 5 partidos de la jornada seleccionada
-                jornada_para_racha = None if selected == "Resumen Semanal" else selected
-                render_jugador_visual(player, stats, stats_resumen, selected, mostrar_tendencias=mostrar_tendencias, mostrar_racha=True, jornada_racha=jornada_para_racha)
+        render_tarjetas_jugadores(
+            d2, stats_resumen, selected,
+            mostrar_tendencias=mostrar_tendencias,
+            jornada_racha=None if selected == "Resumen Semanal" else selected,
+            key_prefix="pcard_res")
 
         if d1 is not None:
             st.subheader("⚔️ Detalles")

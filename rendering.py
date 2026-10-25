@@ -254,6 +254,97 @@ def render_pentagono_habilidades(pr, lam_180, promedio_dardos, checkouts, pct_vi
     
     return html_datos
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TARJETAS DE JUGADORES (Resultados y Live)
+# ─────────────────────────────────────────────────────────────────────────────
+# Sinonimos de las columnas del Sheet (las jornadas diarias y el Resumen
+# Semanal no usan exactamente los mismos nombres)
+_SIN_PR = ["puntiación global", "puntuación global", "puntacion global",
+           "puntiación", "puntuación", "puntacion"]
+_SIN_PROMEDIO = ["promedio puntos total", "promedio puntos", "media puntos",
+                 "puntos total", "promedio dardos", "average"]
+_SIN_180 = ["media 180 por partida", "180 por partida", "180 por partido",
+            "media 180", "media de 180"]
+_SIN_CHECKOUT = ["promedio checkouts", "promedio checkout", "checkouts",
+                 "checkout"]
+_SIN_VICTORIAS = ["número victorias", "numero victorias", "n. victorias",
+                  "n victorias", "victorias"]
+_SIN_DERROTAS = ["número derrotas", "numero derrotas", "n. derrotas",
+                 "n derrotas", "derrotas"]
+
+
+def _valor_stat(stats, sinonimos):
+    """Primer valor numerico de stats cuya clave contiene alguno de los
+    sinonimos (en orden). None si no hay o no es un numero."""
+    for syn in sinonimos:
+        for k, v in stats.items():
+            if syn in str(k).lower():
+                try:
+                    return float(str(v).replace("%", "").replace(",", ".").strip())
+                except Exception:
+                    return None
+    return None
+
+
+def _html_tarjeta_jugador(pos, nombre, stats):
+    import html as _html
+    pr = _valor_stat(stats, _SIN_PR)
+    prom = _valor_stat(stats, _SIN_PROMEDIO)
+    l180 = _valor_stat(stats, _SIN_180)
+    co = _valor_stat(stats, _SIN_CHECKOUT)
+    v = _valor_stat(stats, _SIN_VICTORIAS)
+    d = _valor_stat(stats, _SIN_DERROTAS)
+    ha_jugado = any(x for x in (pr, prom, l180, co, v, d))
+    if pr is None or not ha_jugado:
+        clase_pr, txt_pr = "pr-nd", "—"
+    else:
+        clase_pr = ("pr-alto" if pr >= 72 else "pr-medio" if pr >= 64
+                    else "pr-bajo" if pr >= 56 else "pr-muybajo")
+        txt_pr = f"{pr:.1f}"
+    clase_pos = " top1" if pos == 1 and ha_jugado else ""
+    cabecera = (
+        f"<div class='pc-top'><span class='pc-pos{clase_pos}'>{pos}</span>"
+        f"<span class='pc-nom'>{_html.escape(str(nombre).title())}</span>"
+        f"<span class='pc-pr {clase_pr}' title='Power Rating'>{txt_pr}"
+        f"<small>PR</small></span></div>")
+    if not ha_jugado:
+        return (f"<div class='pc'>{cabecera}<div class='pc-vacio'>"
+                f"Aún no ha jugado en esta jornada</div></div>")
+
+    def celda(valor, etiqueta):
+        return f"<div><b>{valor}</b><span>{etiqueta}</span></div>"
+
+    vd = (f"{int(v)}–{int(d)}" if v is not None and d is not None else "—")
+    celdas = (celda(f"{prom:.1f}" if prom is not None else "—", "Promedio")
+              + celda(f"{l180:.2f}" if l180 is not None else "—", "180s/partido")
+              + celda(f"{co:.0f}%" if co is not None else "—", "Checkout")
+              + celda(vd, "V–D"))
+    return f"<div class='pc'>{cabecera}<div class='pc-stats'>{celdas}</div></div>"
+
+
+def render_tarjetas_jugadores(d2, stats_resumen, selected, mostrar_tendencias,
+                              jornada_racha, key_prefix="pcard"):
+    """Jugadores como tarjetas (ordenadas por Power Rating) con sus numeros
+    clave a la vista; el detalle completo va en un desplegable de cada
+    tarjeta. Dos columnas en PC, una en el movil."""
+    filas = [(player, stats, _valor_stat(stats, _SIN_PR) or 0.0)
+             for player, stats in d2.items()]
+    filas.sort(key=lambda x: -x[2])
+    cols = None
+    for i, (player, stats, _pr) in enumerate(filas):
+        if i % 2 == 0:
+            cols = st.columns(2, gap="small")
+        with cols[i % 2]:
+            with st.container(border=True, key=f"{key_prefix}_{i}"):
+                st.markdown(_html_tarjeta_jugador(i + 1, player, stats),
+                            unsafe_allow_html=True)
+                with st.expander("Ver estadísticas completas"):
+                    render_jugador_visual(
+                        player, stats, stats_resumen, selected,
+                        mostrar_tendencias=mostrar_tendencias,
+                        mostrar_racha=True, jornada_racha=jornada_racha)
+
+
 def render_jugador_visual(player, stats, stats_resumen, selected, mostrar_tendencias=True, mostrar_racha=False, jornada_racha=None):
     """Renderiza un jugador con 9 estadísticas en un layout simétrico:
     
@@ -677,19 +768,28 @@ def selector_jornada(key_prefix, incluir_resumen=True,
     # Son dos barras de botones (segmented control) en vez de 3 filas de
     # botones sueltos: en el movil los botones se apilaban uno debajo de
     # otro y ocupaban una pantalla entera antes de ver ningun dato.
+    def _no_deseleccionar(clave, valor):
+        # Pulsar la opcion ya elegida la deseleccionaba (se quedaba sin
+        # marcar aunque se siguiera viendo esa jornada): la dejamos marcada.
+        if st.session_state.get(clave) is None:
+            st.session_state[clave] = valor
+
     def _dibujar_botones():
         opciones_g = ["Grupo A", "Grupo B", "Grupo C", "Final"]
         if incluir_resumen:
             opciones_g.append("Resumen Semanal")
-        etiquetas_g = {"Final": "🏆 Final", "Resumen Semanal": "📊 Resumen"}
+        etiquetas_g = {"Final": ":material/trophy: Final",
+                       "Resumen Semanal": "Resumen"}
         actual_g = st.session_state[grupo_key]
         actual_g = actual_g if actual_g in opciones_g else None
         # La key incluye el valor actual: si el estado cambia desde otro sitio
         # (p. ej. el boton "Forma reciente"), el control se redibuja con el.
+        clave_g = f"{key_prefix}_seg_grupo_{actual_g}"
         sel_g = st.segmented_control(
             "Grupo", opciones_g, default=actual_g,
             format_func=lambda g: etiquetas_g.get(g, g),
-            key=f"{key_prefix}_seg_grupo_{actual_g}",
+            key=clave_g, on_change=_no_deseleccionar,
+            args=(clave_g, actual_g),
             label_visibility="collapsed")
         if sel_g and sel_g != actual_g:
             st.session_state[grupo_key] = sel_g
@@ -704,10 +804,12 @@ def selector_jornada(key_prefix, incluir_resumen=True,
             dias = grupos[grupo_actual]
             actual_d = st.session_state[jornada_key]
             actual_d = actual_d if actual_d in dias else None
+            clave_d = f"{key_prefix}_seg_dia_{actual_d}"
             sel_d = st.segmented_control(
                 "Día", dias, default=actual_d,
                 format_func=lambda d: d.replace(grupo_actual + " ", ""),
-                key=f"{key_prefix}_seg_dia_{actual_d}",
+                key=clave_d, on_change=_no_deseleccionar,
+                args=(clave_d, actual_d),
                 label_visibility="collapsed")
             if sel_d and sel_d != actual_d:
                 st.session_state[jornada_key] = sel_d

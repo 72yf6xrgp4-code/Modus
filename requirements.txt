@@ -1,5 +1,6 @@
 # Dependencias de la app. Al cambiar este archivo Streamlit Cloud reinstala y
 # reinicia la app (sirve para forzar que cargue la version nueva del codigo).
+# Revision: 2026-10-25 (tarjetas de jugadores, barra lateral y menu flotante)
 streamlit>=1.40
 pandas
 numpy
