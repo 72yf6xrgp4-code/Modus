@@ -271,22 +271,99 @@ _SIN_VICTORIAS = ["número victorias", "numero victorias", "n. victorias",
                   "n victorias", "victorias"]
 _SIN_DERROTAS = ["número derrotas", "numero derrotas", "n. derrotas",
                  "n derrotas", "derrotas"]
+_SIN_PCT = ["porcentaje victoria", "porcentaje de victoria", "% victoria",
+            "%victoria", "porc. victoria"]
+_SIN_VOL = ["índice volatilidad", "indice volatilidad",
+            "índice de volatilidad", "volatilidad"]
+_SIN_LEGS = ["legs por partido", "leg por partido", "legs totales",
+             "total legs"]
+_SIN_DIF = ["diferencia de legs", "diferencia legs", "dif. legs", "dif legs"]
 
 
 def _valor_stat(stats, sinonimos):
     """Primer valor numerico de stats cuya clave contiene alguno de los
     sinonimos (en orden). None si no hay o no es un numero."""
+    if not stats:
+        return None
     for syn in sinonimos:
         for k, v in stats.items():
             if syn in str(k).lower():
                 try:
-                    return float(str(v).replace("%", "").replace(",", ".").strip())
+                    x = float(str(v).replace("%", "").replace(",", ".").strip())
                 except Exception:
                     return None
+                return x if np.isfinite(x) else None
     return None
 
 
-def _html_tarjeta_jugador(pos, nombre, stats):
+def _stats_semana(player, stats_resumen):
+    """Estadisticas del Resumen Semanal del jugador (los nombres pueden
+    venir con otras mayusculas)."""
+    if not stats_resumen:
+        return None
+    if player in stats_resumen:
+        return stats_resumen[player]
+    nombre = str(player).lower().strip()
+    for k, v in stats_resumen.items():
+        if str(k).lower().strip() == nombre:
+            return v
+    return None
+
+
+def _flecha(actual, semanal, etiqueta, invertir=False):
+    """Flecha frente a la semana (verde si mejora, roja si empeora) con los
+    mismos umbrales de siempre (calcular_tendencia). invertir: para la
+    volatilidad, donde bajar es mejorar."""
+    if actual is None or semanal is None:
+        return ""
+    indicador, _, comparativa = calcular_tendencia(actual, semanal, etiqueta)
+    if not indicador:
+        return ""
+    sube = "↑" in indicador
+    mejora = (not sube) if invertir else sube
+    return (f"<i class='{'tu' if mejora else 'td'}' "
+            f"title='Semana: {comparativa.strip('()')}'>"
+            f"{'↑' if sube else '↓'}</i>")
+
+
+def _ha_jugado(stats):
+    """Algun dato distinto de cero: si todo esta a 0, el jugador aun no ha
+    jugado en esta jornada."""
+    return any(_valor_stat(stats, s) for s in
+               (_SIN_PR, _SIN_PROMEDIO, _SIN_180, _SIN_CHECKOUT,
+                _SIN_VICTORIAS, _SIN_DERROTAS))
+
+
+def _clase_volatilidad(vol):
+    # Mismos tramos que color_volatilidad: <8 bajo, 8-12 medio, >12 alto
+    return "v-bajo" if vol < 8 else "v-medio" if vol <= 12 else "v-alto"
+
+
+def _html_racha(player, jornada_racha):
+    """Puntos verde/rojo de los ultimos 5 partidos (de la jornada indicada o,
+    si es None, de toda la semana) y cuantos son. ("", 0) si no hay datos."""
+    try:
+        from data_loading import cargar_historial_semana, cargar_historial_jornada
+        resultados = (cargar_historial_jornada(player, jornada_racha)
+                      if jornada_racha else cargar_historial_semana(player))
+    except Exception:
+        return "", 0
+    ultimos = list(resultados or [])[-5:]
+    if not ultimos:
+        return "", 0
+    puntos = "".join(f"<i class='{'w' if r else 'l'}'></i>" for r in ultimos)
+    return f"<span class='pc-dots'>{puntos}</span>", len(ultimos)
+
+
+def _html_tarjeta_jugador(pos, nombre, stats, stats_sem=None, racha=("", 0)):
+    """Toda la informacion del jugador en la tarjeta, cada dato una sola vez:
+    cabecera (posicion, nombre, PR) y dos filas de 4 casillas:
+      promedio, 180s por partido, checkout, victorias-derrotas (con el %)
+      legs por partido, diferencia de legs, volatilidad, ultimos partidos
+    stats_sem: el Resumen Semanal del jugador, para las flechas frente a la
+    semana y para los datos que el Sheet aun no tiene en la jornada (se
+    muestran los de la semana, marcados con "sem"). None = sin flechas,
+    p. ej. viendo el propio Resumen. racha: lo que devuelve _html_racha."""
     import html as _html
     pr = _valor_stat(stats, _SIN_PR)
     prom = _valor_stat(stats, _SIN_PROMEDIO)
@@ -294,13 +371,18 @@ def _html_tarjeta_jugador(pos, nombre, stats):
     co = _valor_stat(stats, _SIN_CHECKOUT)
     v = _valor_stat(stats, _SIN_VICTORIAS)
     d = _valor_stat(stats, _SIN_DERROTAS)
-    ha_jugado = any(x for x in (pr, prom, l180, co, v, d))
+    ha_jugado = _ha_jugado(stats)
+    sem = stats_sem if ha_jugado else None
+
+    def fl(actual, sinonimos, etiqueta, invertir=False):
+        return _flecha(actual, _valor_stat(sem, sinonimos), etiqueta, invertir)
+
     if pr is None or not ha_jugado:
         clase_pr, txt_pr = "pr-nd", "—"
     else:
         clase_pr = ("pr-alto" if pr >= 72 else "pr-medio" if pr >= 64
                     else "pr-bajo" if pr >= 56 else "pr-muybajo")
-        txt_pr = f"{pr:.1f}"
+        txt_pr = f"{pr:.1f}" + fl(pr, _SIN_PR, "puntiación global")
     clase_pos = " top1" if pos == 1 and ha_jugado else ""
     cabecera = (
         f"<div class='pc-top'><span class='pc-pos{clase_pos}'>{pos}</span>"
@@ -311,22 +393,73 @@ def _html_tarjeta_jugador(pos, nombre, stats):
         return (f"<div class='pc'>{cabecera}<div class='pc-vacio'>"
                 f"Aún no ha jugado en esta jornada</div></div>")
 
-    def celda(valor, etiqueta):
-        return f"<div><b>{valor}</b><span>{etiqueta}</span></div>"
+    def celda(valor, etiqueta, extra="", clase="", title=""):
+        t = f" title='{title}'" if title else ""
+        c = f" class='{clase}'" if clase else ""
+        return f"<div{t}><b{c}>{valor}{extra}</b><span>{etiqueta}</span></div>"
 
+    SEM = "<small>sem</small>"
+    TIT_SEM = "Dato de la semana: el Sheet aún no lo tiene en esta jornada"
+
+    def dato_o_semana(sinonimos, cero_es_falta=True):
+        """(valor, es_de_la_semana): el de la jornada o, si falta, el de la
+        semana."""
+        x = _valor_stat(stats, sinonimos)
+        if x is not None and (x != 0 or not cero_es_falta):
+            return x, False
+        xs = _valor_stat(stats_sem, sinonimos)
+        if xs is not None and (xs != 0 or not cero_es_falta):
+            return xs, True
+        return None, False
+
+    # Fila 1: promedio, 180s, checkout y victorias-derrotas con el %
+    pct_v = _valor_stat(stats, _SIN_PCT)
+    if pct_v is None and v is not None and d is not None and v + d > 0:
+        pct_v = 100 * v / (v + d)
     vd = (f"{int(v)}–{int(d)}" if v is not None and d is not None else "—")
-    celdas = (celda(f"{prom:.1f}" if prom is not None else "—", "Promedio")
-              + celda(f"{l180:.2f}" if l180 is not None else "—", "180s/partido")
-              + celda(f"{co:.0f}%" if co is not None else "—", "Checkout")
-              + celda(vd, "V–D"))
-    return f"<div class='pc'>{cabecera}<div class='pc-stats'>{celdas}</div></div>"
+    etq_vd = f"V–D · {pct_v:.0f}%" if pct_v is not None else "V–D"
+    fila1 = (celda(f"{prom:.1f}" if prom is not None else "—", "Promedio",
+                   fl(prom, _SIN_PROMEDIO, "Promedio puntos total"))
+             + celda(f"{l180:.2f}" if l180 is not None else "—", "180s/partido",
+                     fl(l180, _SIN_180, "Media 180 por partida"))
+             + celda(f"{co:.0f}%" if co is not None else "—", "Checkout",
+                     fl(co, _SIN_CHECKOUT, "Promedio Checkouts"))
+             + celda(vd, etq_vd, fl(pct_v, _SIN_PCT, "Porcentaje victoria")))
+
+    # Fila 2: legs por partido, diferencia de legs, volatilidad, ultimos
+    legs, legs_sem = dato_o_semana(_SIN_LEGS)
+    c_legs = (celda(f"{legs:.1f}", "Legs/partido", SEM if legs_sem else "",
+                    title=TIT_SEM if legs_sem else "")
+              if legs is not None else celda("—", "Legs/partido"))
+    dif, dif_sem = dato_o_semana(_SIN_DIF, cero_es_falta=False)
+    if dif is None:
+        c_dif = celda("—", "Dif. legs")
+    else:
+        c_dif = celda(f"{dif:+.1f}" if dif else "0.0", "Dif. legs",
+                      SEM if dif_sem else "",
+                      "pos" if dif > 0 else "neg" if dif < 0 else "",
+                      TIT_SEM if dif_sem else "")
+    vol, vol_sem = dato_o_semana(_SIN_VOL)
+    if vol is None:
+        c_vol = celda("—", "Volatilidad")
+    else:
+        c_vol = celda(f"{vol:.1f}", "Volatilidad",
+                      SEM if vol_sem else fl(vol, _SIN_VOL, "Índice Volatilidad", True),
+                      _clase_volatilidad(vol), TIT_SEM if vol_sem else "")
+    puntos, n = racha
+    c_racha = (celda(puntos, "Último" if n == 1 else f"Últimos {n}",
+                     title="Verde: victoria · rojo: derrota")
+               if n else celda("—", "Últimos 5"))
+    fila2 = c_legs + c_dif + c_vol + c_racha
+    return (f"<div class='pc'>{cabecera}"
+            f"<div class='pc-stats'>{fila1}{fila2}</div></div>")
 
 
 def render_tarjetas_jugadores(d2, stats_resumen, selected, mostrar_tendencias,
                               jornada_racha, key_prefix="pcard"):
-    """Jugadores como tarjetas (ordenadas por Power Rating) con sus numeros
-    clave a la vista; el detalle completo va en un desplegable de cada
-    tarjeta. Dos columnas en PC, una en el movil."""
+    """Jugadores como tarjetas, ordenadas por Power Rating, con toda su
+    informacion a la vista (sin desplegable y sin datos repetidos). Dos
+    columnas en PC, una en el movil."""
     filas = [(player, stats, _valor_stat(stats, _SIN_PR) or 0.0)
              for player, stats in d2.items()]
     filas.sort(key=lambda x: -x[2])
@@ -334,15 +467,14 @@ def render_tarjetas_jugadores(d2, stats_resumen, selected, mostrar_tendencias,
     for i, (player, stats, _pr) in enumerate(filas):
         if i % 2 == 0:
             cols = st.columns(2, gap="small")
+        stats_sem = (_stats_semana(player, stats_resumen)
+                     if mostrar_tendencias else None)
+        racha = _html_racha(player, jornada_racha) if _ha_jugado(stats) else ("", 0)
         with cols[i % 2]:
             with st.container(border=True, key=f"{key_prefix}_{i}"):
-                st.markdown(_html_tarjeta_jugador(i + 1, player, stats),
+                st.markdown(_html_tarjeta_jugador(i + 1, player, stats,
+                                                  stats_sem, racha),
                             unsafe_allow_html=True)
-                with st.expander("Ver estadísticas completas"):
-                    render_jugador_visual(
-                        player, stats, stats_resumen, selected,
-                        mostrar_tendencias=mostrar_tendencias,
-                        mostrar_racha=True, jornada_racha=jornada_racha)
 
 
 def render_jugador_visual(player, stats, stats_resumen, selected, mostrar_tendencias=True, mostrar_racha=False, jornada_racha=None):

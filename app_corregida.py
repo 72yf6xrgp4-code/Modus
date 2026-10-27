@@ -191,9 +191,9 @@ st.markdown("""
 .st-key-sb_refrescar,.st-key-sb_script{width:100%!important}
 .st-key-sb_refrescar [data-testid=stButton],.st-key-sb_script [data-testid=stButton],
 .st-key-sb_refrescar button,.st-key-sb_script button{width:100%}
-/* ── Tarjetas de jugadores ── */
+/* ── Tarjetas de jugadores: toda la informacion a la vista, sin desplegable ── */
 [class*="st-key-pcard_"]{border-radius:16px!important;border-color:#e2e8f0!important;
-  background:#fff;padding:.85rem .95rem .2rem!important;gap:.35rem!important}
+  background:#fff;padding:.85rem .95rem .9rem!important;gap:.35rem!important}
 .pc-top{display:flex;align-items:center;gap:.6rem}
 .pc-pos{width:1.65rem;height:1.65rem;border-radius:50%;background:#f1f5f9;color:#475569;
   font-weight:700;font-size:.8rem;display:flex;align-items:center;justify-content:center;
@@ -207,21 +207,29 @@ st.markdown("""
 .pr-alto{background:#dcfce7;color:#166534}.pr-medio{background:#ecfccb;color:#3f6212}
 .pr-bajo{background:#fef3c7;color:#92400e}.pr-muybajo{background:#fee2e2;color:#991b1b}
 .pr-nd{background:#f1f5f9;color:#94a3b8}
+/* dos filas de 4: promedio, 180s, checkout, V-D / legs, dif. legs,
+   volatilidad, ultimos partidos */
 .pc-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem;
   margin-top:.7rem}
-.pc-stats div{background:#f8fafc;border-radius:10px;padding:.45rem .25rem;text-align:center}
-.pc-stats b{display:block;font-size:1rem;color:#0f172a}
+.pc-stats div{background:#f8fafc;border-radius:10px;padding:.45rem .15rem;text-align:center;
+  min-width:0}
+.pc-stats b{display:block;font-size:1rem;line-height:1.5rem;color:#0f172a;white-space:nowrap}
 .pc-stats span{display:block;font-size:.66rem;color:#64748b;margin-top:1px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* flecha frente a la semana (jornadas diarias) y marca "sem" (dato de la
+   semana porque el Sheet aun no lo tiene en la jornada) */
+.pc-stats b i,.pc-pr i{font-style:normal;font-size:.75rem;font-weight:800;margin-left:1px;
+  line-height:1}
+.tu{color:#16a34a}.td{color:#dc2626}
+.pc-stats b small{font-size:.58rem;font-weight:600;color:#94a3b8;margin-left:2px;line-height:1}
+.pc-stats .pos{color:#15803d}.pc-stats .neg{color:#dc2626}
+.v-bajo{color:#16a34a!important}.v-medio{color:#ca8a04!important}.v-alto{color:#dc2626!important}
+/* ultimos partidos: un punto por partido, verde victoria y rojo derrota */
+.pc-stats .pc-dots{display:inline-flex;gap:4px;align-items:center;height:1.5rem;
+  vertical-align:top;overflow:visible;margin:0}
+.pc-dots i{width:9px;height:9px;border-radius:50%;background:#22c55e;display:block}
+.pc-dots i.l{background:#ef4444}
 .pc-vacio{margin-top:.6rem;font-size:.85rem;color:#94a3b8}
-[class*="st-key-pcard_"] [data-testid=stExpander] details{border:0!important;
-  background:transparent!important}
-[class*="st-key-pcard_"] [data-testid=stExpander] summary{padding:.35rem 0!important;
-  color:#64748b;background:transparent!important}
-[class*="st-key-pcard_"] [data-testid=stExpander] summary:hover{color:#ff4b4b}
-[class*="st-key-pcard_"] [data-testid=stExpander] summary p{font-size:.85rem}
-/* el detalle completo, dentro de una tarjeta de media pantalla: 2 columnas */
-[class*="st-key-pcard_"] .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 /* misma separacion entre tarjetas en horizontal y en vertical (tambien
    apiladas en el movil) */
 [data-testid=stHorizontalBlock]:has([class*="st-key-pcard_"]){gap:1rem!important}
