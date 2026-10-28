@@ -131,9 +131,13 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
     st.markdown("---")
     st.markdown("### 🌐 Cuotas de Winamax")
     leidas = datetime.fromtimestamp(datos["h"], MADRID).strftime("%H:%M") if datos["h"] else "?"
-    st.caption(f"Leídas de la página que tenías abierta a las {leidas} "
-               f"(estado en Winamax: {datos['s'] or '?'}). Si han pasado minutos, "
-               "recarga la página de Winamax y vuelve a pulsar el botón.")
+    if datos.get("f") == "pantalla":
+        st.caption(f"Leídas a las {leidas} de lo que se veía en pantalla "
+                   f"({len(datos['mercados'])} mercados). Winamax solo pinta los mercados "
+                   "cercanos: si falta alguno, desplázate hasta verlo y vuelve a pulsar.")
+    else:
+        st.caption(f"Leídas de la página de Winamax a las {leidas} "
+                   f"(estado: {datos['s'] or '?'}), con las cuotas al día de la pantalla.")
     if datos["s"] and datos["s"].upper() != "PREMATCH":
         st.warning("⚠️ Winamax no lo marca como prepartido: tus reglas son solo prepartido.")
     if w["orden"] != "cartel":

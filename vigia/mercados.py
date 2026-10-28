@@ -76,6 +76,9 @@ def tipo_mercado(titulo):
     t = normalizar_nombre(titulo)
     if not t:
         return None
+    # En Modus el partido es un solo set: "1er set - Handicap de legs" es el
+    # handicap del partido. (Los de "1er set - 1er leg - ..." caen abajo.)
+    t = re.sub(r"^(1er|primer) set ", "", t)
     # Mercados de una leg concreta, de quien hace el primer 180, checkouts...
     # no los cubre el modelo: fuera
     if re.search(r"(\b\d+\S* leg\b|\bprimera? leg\b|\bleg \d|checkout|impar|"

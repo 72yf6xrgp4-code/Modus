@@ -11,6 +11,11 @@ def test_tipos():
     assert tipo_mercado("Total de 180") == "180"
     assert tipo_mercado("Ganador del leg 1") is None
     assert tipo_mercado("Checkout más alto") is None
+    # En Modus el partido es un solo set
+    assert tipo_mercado("1er set - Hándicap de legs") == "handicap"
+    assert tipo_mercado("1er set - Marcador exacto (en legs)") == "resultado"
+    assert tipo_mercado("1er set - 1er leg - D. Coulson anota un 180") is None
+    assert tipo_mercado("1er set - Total de legs - Par/Impar") is None
 
 
 def test_ganador_respeta_el_orden_del_cartel():

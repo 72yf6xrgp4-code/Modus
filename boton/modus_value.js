@@ -2,10 +2,19 @@
  * Boton "Modus value" (marcador del navegador).
  *
  * Se pulsa a mano con un partido de Modus abierto en la web de Winamax. Lee
- * SOLO las cuotas que ya estan en esa pagina (el estado PRELOADED_STATE que
- * la propia pagina trae) y abre la app (Value Bets) con el partido y las
- * cuotas. No hace ninguna peticion a Winamax, no inicia sesion, no toca el
- * boleto y no apuesta. Si no encuentra las cuotas lo dice y no envia nada.
+ * SOLO las cuotas que ya estan en esa pagina y abre la app (Value Bets) con
+ * el partido y las cuotas. No hace ninguna peticion a Winamax, no inicia
+ * sesion, no toca el boleto y no apuesta. Si no encuentra las cuotas lo dice
+ * y no envia nada.
+ *
+ * De donde salen las cuotas:
+ *  1) Los botones de cuota que se ven en pantalla (data-testid
+ *     "odd-button-<id>" dentro de cada mercado "match-group-<partido>-<id>").
+ *     Estan siempre al dia, tambien si has llegado al partido navegando
+ *     dentro de Winamax (sin recargar).
+ *  2) El estado que la pagina trae al cargarse (PRELOADED_STATE): sirve para
+ *     completar los mercados que no se ven (la lista solo pinta los que
+ *     estan cerca de la pantalla), pero SOLO si es de este mismo partido.
  *
  * Este archivo es la fuente legible. El marcador que se instala es
  * boton/marcador.txt (generado con: python boton/construir.py).
@@ -75,39 +84,114 @@
     return p && lista(p.bets).length ? { st: st, p: p, id: String(id) } : null;
   }
 
+  /* Mercados del partido que se ven en pantalla:
+     {matchId, mercados: {betId: {titulo, salidas: {outcomeId: [label, cuota]}}}} */
+  function leerPantalla(idUrl) {
+    var res = { matchId: idUrl, mercados: {}, n: 0 };
+    var grupos = document.querySelectorAll(".bet-group-template");
+    for (var i = 0; i < grupos.length; i++) {
+      var g = grupos[i];
+      var botones = g.querySelectorAll('[data-testid^="odd-button-"]');
+      var ids = {}, salidas = {}, ns = 0;
+      for (var j = 0; j < botones.length; j++) {
+        var oid = botones[j].getAttribute("data-testid").replace("odd-button-", "");
+        ids[oid] = 1;
+        var v = botones[j].querySelector(".odd-button-value");
+        if (!v) continue;
+        var c = cuota(String(v.innerText || v.textContent || "").replace(",", "."));
+        var cont = v.parentElement && v.parentElement.previousElementSibling;
+        var label = cont ? (cont.innerText || cont.textContent || "").trim() : "";
+        if (c && label) { salidas[oid] = [label, c]; ns++; }
+      }
+      /* La marca del mercado es match-group-<partido>-<apuesta>; las de
+         cada salida llevan el id de la salida y se ignoran */
+      var anclas = g.querySelectorAll('[data-anchorid^="match-group-"]'), mid = null, bid = null;
+      for (var k = 0; k < anclas.length; k++) {
+        var partes = anclas[k].getAttribute("data-anchorid").split("-");
+        if (partes[2] && partes[3] && !ids[partes[3]]) { mid = partes[2]; bid = partes[3]; break; }
+      }
+      if (!mid || !ns) continue;
+      if (res.matchId && mid !== String(res.matchId)) continue;
+      res.matchId = mid;
+      /* Titulo: subiendo desde el bloque, el primer hermano anterior que no
+         tiene cuotas */
+      var el = g, titulo = "";
+      while (el && el.parentElement && !titulo) {
+        var padre = el.parentElement, primero = padre.firstElementChild;
+        if (primero && primero !== el && !primero.querySelector('[data-testid^="odd-button-"]')) {
+          titulo = (primero.innerText || primero.textContent || "").trim().split("\n")[0];
+        }
+        el = padre;
+      }
+      if (!titulo) continue;
+      var previo = res.mercados[bid];
+      if (previo) { for (var o in salidas) previo.salidas[o] = salidas[o]; }
+      else res.mercados[bid] = { titulo: titulo, salidas: salidas };
+      res.n += ns;
+    }
+    return res;
+  }
+
+  /* Nombres de los jugadores desde el titulo de la pestana:
+     "Derek Coulson - Andy Baetens | MODUS Super Series | ..." */
+  function nombresDelTitulo() {
+    var t = String(document.title || "").split("|")[0].split(" - ");
+    return t.length === 2 ? [t[0].trim(), t[1].trim()] : null;
+  }
+
   try {
     var m = location.pathname.match(/\/match\/(\d+)/);
     var idUrl = m ? m[1] : null;
-    var dato = buscarPartido(window.PRELOADED_STATE, idUrl) ||
-               buscarPartido(estadoDeScripts(), idUrl);
-    if (!dato) {
-      return aviso("no encuentro las cuotas de un partido en esta página. " +
-                   "Abre la página del partido en Winamax, recárgala y vuelve a pulsar. " +
-                   "No se ha enviado nada.");
-    }
-    var st = dato.st, p = dato.p, mercados = [];
-    var bets = lista(p.bets);
-    for (var i = 0; i < bets.length; i++) {
-      var b = st.bets && st.bets[bets[i]];
-      if (!b || b.available === false) continue;
-      var sal = [], outs = lista(b.outcomes);
-      for (var j = 0; j < outs.length; j++) {
-        var o = st.outcomes && st.outcomes[outs[j]];
-        var c = cuota(st.odds && st.odds[outs[j]]);
-        if (o && c) sal.push([String(o.label || ""), String(o.code || ""), c]);
+    var pant = leerPantalla(idUrl);
+    var idPartido = idUrl || pant.matchId;
+    var dato = buscarPartido(window.PRELOADED_STATE, idPartido) ||
+               buscarPartido(estadoDeScripts(), idPartido);
+    if (dato && pant.matchId && dato.id !== String(pant.matchId)) dato = null;  /* otro partido */
+
+    var mercados = [], vistos = {}, fuente, enPantalla = [];
+    if (dato) {
+      /* Estructura del estado; cuotas de la pantalla cuando se ven (al dia) */
+      var st = dato.st, p = dato.p, bets = lista(p.bets);
+      for (var i = 0; i < bets.length; i++) {
+        var b = st.bets && st.bets[bets[i]];
+        if (!b || b.available === false) continue;
+        var enPant = pant.mercados[String(bets[i])];
+        var sal = [], outs = lista(b.outcomes);
+        for (var j = 0; j < outs.length; j++) {
+          var o = st.outcomes && st.outcomes[outs[j]];
+          var vp = enPant && enPant.salidas[String(outs[j])];
+          var c = vp ? vp[1] : cuota(st.odds && st.odds[outs[j]]);
+          if (o && c) sal.push([String(o.label || ""), String(o.code || ""), c]);
+        }
+        if (sal.length) mercados.push([String(b.betTitle || ""), sal]);
+        vistos[String(bets[i])] = 1;
       }
-      if (sal.length) mercados.push([String(b.betTitle || ""), sal]);
+      fuente = "pagina";
     }
-    if (!mercados.length || !p.competitor1Name || !p.competitor2Name) {
-      return aviso("he encontrado el partido pero ninguna cuota. " +
-                   "Puede que Winamax haya cambiado su página o que los mercados estén cerrados. " +
+    /* Mercados que solo estan en pantalla (llegaste navegando, o Winamax
+       los ha publicado despues de cargar la pagina). Van PRIMERO: si el
+       mismo mercado sale dos veces, la app se queda con el primero, y estos
+       son los mas recientes. */
+    for (var bid in pant.mercados) {
+      if (vistos[bid]) continue;
+      var mp = pant.mercados[bid], sp = [];
+      for (var oid in mp.salidas) sp.push([mp.salidas[oid][0], "", mp.salidas[oid][1]]);
+      enPantalla.push([mp.titulo, sp]);
+    }
+    mercados = enPantalla.concat(mercados);
+    if (!dato) fuente = "pantalla";
+
+    var nombres = dato ? [dato.p.competitor1Name, dato.p.competitor2Name] : nombresDelTitulo();
+    if (!mercados.length || !nombres || !nombres[0] || !nombres[1]) {
+      return aviso("no encuentro las cuotas de un partido en esta página. " +
+                   "Abre el partido en Winamax y espera a que se vean las cuotas. " +
                    "No se ha enviado nada.");
     }
     var datos = {
-      v: 1, id: dato.id,
-      c1: String(p.competitor1Name), c2: String(p.competitor2Name),
-      t: p.matchStart || 0, s: String(p.status || ""),
-      h: Math.round(Date.now() / 1000), m: mercados
+      v: 1, id: String(idPartido || ""),
+      c1: String(nombres[0]), c2: String(nombres[1]),
+      t: dato ? (dato.p.matchStart || 0) : 0, s: dato ? String(dato.p.status || "") : "",
+      h: Math.round(Date.now() / 1000), f: fuente, m: mercados
     };
     var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(datos))))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

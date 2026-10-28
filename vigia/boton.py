@@ -56,6 +56,9 @@ def decodificar(wm):
     return {"id": str(d.get("id") or ""), "c1": str(d["c1"]).strip(),
             "c2": str(d["c2"]).strip(), "t": int(d.get("t") or 0),
             "s": str(d.get("s") or ""), "h": int(d.get("h") or 0),
+            # "pagina": estado de la pagina + cuotas al dia de la pantalla;
+            # "pantalla": solo lo que se veia (llegaste navegando)
+            "f": str(d.get("f") or "pagina"),
             "mercados": mercados}
 
 
