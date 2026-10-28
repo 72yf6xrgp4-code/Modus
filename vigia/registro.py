@@ -137,3 +137,111 @@ def estado_partido(filas, fecha, j1, j2):
         if gasta_tope(f):
             apuesta = f
     return marcadas, apuesta
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SEGUIMIENTO POR MERCADO (sin y con volatilidad)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_NIVEL_TEXTO = {"bajo": 5.0, "medio": 10.0}   # suficientes para aplicar la regla
+
+
+def _vol(v):
+    """Volatilidad guardada en la fila: numero, o el nivel en texto de las
+    filas antiguas ('bajo'/'medio' valen para la regla; 'alto' no)."""
+    t = str(v or "").strip().lower()
+    if t in _NIVEL_TEXTO:
+        return _NIVEL_TEXTO[t]
+    n = safe_float(t, None)
+    return n if n else None
+
+
+def nivel_partido(f):
+    """'baja/media', 'alta' o 'sin dato' segun el mas irregular de los dos."""
+    from modelo.volatilidad import nivel_volatilidad
+    niveles = []
+    for k in ("vol_j1", "vol_j2"):
+        t = str(f.get(k) or "").strip().lower()
+        niveles.append(t if t in ("bajo", "medio", "alto") else nivel_volatilidad(t))
+    if None in niveles or "" in niveles:
+        return "sin dato"
+    return "alta" if "alto" in niveles else "baja/media"
+
+
+def _importe_con_volatilidad(f):
+    """Importe que habria tenido la apuesta con la regla de volatilidad del
+    vigia, o None si esa regla la habria descartado (o no se puede saber)."""
+    from vigia import reglas
+    v1, v2 = _vol(f.get("vol_j1")), _vol(f.get("vol_j2"))
+    if v1 is None or v2 is None:
+        return None
+    req = reglas.requisito_volatilidad(v1, v2)
+    if not req["ok"] or num(f.get("edge")) < req["edge_min"] - 1e-9:
+        return None
+    imp = num(f.get("importe"))
+    return max(reglas.UNIDAD, imp - reglas.UNIDAD) if req["rebaja"] else imp
+
+
+def _acumular(g, f, imp):
+    g["n"] += 1
+    if f.get("resultado") in ("ganada", "perdida"):
+        g["liq"] += 1
+        g["apostado"] += imp
+        if f["resultado"] == "ganada":
+            g["ganadas"] += 1
+            g["beneficio"] += imp * (num(f.get("cuota")) - 1.0)
+        else:
+            g["beneficio"] -= imp
+
+
+def _cerrar(g):
+    g["acierto"] = g["ganadas"] / g["liq"] if g["liq"] else None
+    g["roi"] = g["beneficio"] / g["apostado"] if g["apostado"] else None
+    return g
+
+
+def por_mercado(filas, con_volatilidad=False):
+    """Seguimiento de cada mercado por separado.
+
+    Para cada mercado (y un TOTAL), dos bloques: 'todas' (todas las apuestas
+    con value, con su importe) y 'reales' (solo las marcadas 'apostada').
+    con_volatilidad=True aplica la regla de volatilidad del vigia: quita las
+    que esa regla habria descartado y baja el importe con volatilidad alta.
+    Devuelve (lista de dicts por mercado, n de apuestas excluidas).
+    """
+    vacio = lambda: {"n": 0, "liq": 0, "ganadas": 0, "apostado": 0.0, "beneficio": 0.0}  # noqa: E731
+    grupos, excluidas = {}, 0
+    for f in filas:
+        if f.get("tipo_aviso") != AVISO_APUESTA:
+            continue
+        imp = num(f.get("importe"))
+        if con_volatilidad:
+            imp = _importe_con_volatilidad(f)
+            if imp is None:
+                excluidas += 1
+                continue
+        for clave in (f.get("mercado") or "?", "TOTAL"):
+            g = grupos.setdefault(clave, {"todas": vacio(), "reales": vacio()})
+            _acumular(g["todas"], f, imp)
+            if f.get("estado") == ESTADO_APOSTADA:
+                _acumular(g["reales"], f, imp)
+    salida = []
+    for mercado in sorted(grupos, key=lambda m: (m == "TOTAL", m)):
+        g = grupos[mercado]
+        salida.append({"mercado": mercado, "todas": _cerrar(g["todas"]),
+                       "reales": _cerrar(g["reales"])})
+    return salida, excluidas
+
+
+def por_mercado_y_volatilidad(filas):
+    """Todas las apuestas con value, por mercado y nivel de volatilidad del
+    partido: {(mercado, nivel): acumulado}."""
+    res = {}
+    for f in filas:
+        if f.get("tipo_aviso") != AVISO_APUESTA:
+            continue
+        clave = (f.get("mercado") or "?", nivel_partido(f))
+        g = res.setdefault(clave, {"n": 0, "liq": 0, "ganadas": 0, "apostado": 0.0,
+                                   "beneficio": 0.0})
+        _acumular(g, f, num(f.get("importe")))
+    return {k: _cerrar(v) for k, v in res.items()}

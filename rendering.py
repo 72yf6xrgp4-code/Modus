@@ -16,7 +16,7 @@ from config import URLS, CORTES, PESTANAS_CON_STATS, MUESTRA_MIN_PARTIDOS, MARGE
 from helpers import (
     safe_float, color_volatilidad, calcular_tendencia, sanitize_prob,
     buscar_jugador, calcular_yield, pct, badge_yield, obtener_bandera,
-    es_admin, fecha_jornada_madrid, es_value, icono_yield,
+    es_admin, fecha_jornada_madrid, es_value, icono_yield, chip_yield,
 )
 from data_loading import (
     cargar_todo, cargar_jugadores_desde,
@@ -1618,8 +1618,7 @@ def render_value_bets():
             st.caption(f"{v1*100:.1f}% probabilidad")
             if c1 and c1 > 0:
                 y = calcular_yield(v1, c1)
-                yield_color = icono_yield(y, c1, mercado="vic_j1")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c1, mercado="vic_j1"), unsafe_allow_html=True)
                 if es_value(y, c1, mercado="vic_j1"):
                     value_bets_list.append({"Mercado": f"Gana {j1['nombre_original']}", "Probabilidad": v1, "Cuota Justa": cuota_justa, "Cuota Bookie": c1, "Yield": y})
         with col_v2:
@@ -1630,8 +1629,7 @@ def render_value_bets():
             st.caption(f"{v2*100:.1f}% probabilidad")
             if c2 and c2 > 0:
                 y = calcular_yield(v2, c2)
-                yield_color = icono_yield(y, c2, mercado="vic_j2")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c2, mercado="vic_j2"), unsafe_allow_html=True)
                 if es_value(y, c2, mercado="vic_j2"):
                     value_bets_list.append({"Mercado": f"Gana {j2['nombre_original']}", "Probabilidad": v2, "Cuota Justa": prob_a_cuota(v2), "Cuota Bookie": c2, "Yield": y})
     with tab2:
@@ -1646,8 +1644,7 @@ def render_value_bets():
             st.caption(f"{m180['J1 +0.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J1 +0.5"], c)
-                yield_color = icono_yield(y, c, mercado="180_j1_05")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j1_05"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j1_05"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +0.5 180s", "Probabilidad": m180["J1 +0.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_b:
@@ -1658,8 +1655,7 @@ def render_value_bets():
             st.caption(f"{m180['J1 +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J1 +1.5"], c)
-                yield_color = icono_yield(y, c, mercado="180_j1_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j1_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j1_15"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +1.5 180s", "Probabilidad": m180["J1 +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1674,8 +1670,7 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = icono_yield(y, c, mercado="180_j1_neg05")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j1_neg05"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j1_neg05"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -0.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_d:
@@ -1687,8 +1682,7 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = icono_yield(y, c, mercado="180_j1_neg15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j1_neg15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j1_neg15"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1703,8 +1697,7 @@ def render_value_bets():
             st.caption(f"{m180['J2 +0.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J2 +0.5"], c)
-                yield_color = icono_yield(y, c, mercado="180_j2_05")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j2_05"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j2_05"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +0.5 180s", "Probabilidad": m180["J2 +0.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_b:
@@ -1715,8 +1708,7 @@ def render_value_bets():
             st.caption(f"{m180['J2 +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J2 +1.5"], c)
-                yield_color = icono_yield(y, c, mercado="180_j2_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j2_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j2_15"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +1.5 180s", "Probabilidad": m180["J2 +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1731,8 +1723,7 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = icono_yield(y, c, mercado="180_j2_neg05")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j2_neg05"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j2_neg05"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -0.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_d:
@@ -1744,8 +1735,7 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = icono_yield(y, c, mercado="180_j2_neg15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_j2_neg15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_j2_neg15"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1760,8 +1750,7 @@ def render_value_bets():
             st.caption(f"{m180['Total +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["Total +1.5"], c)
-                yield_color = icono_yield(y, c, mercado="180_ambos_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_ambos_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_ambos_15"):
                     value_bets_list.append({"Mercado": "Total +1.5 180s", "Probabilidad": m180["Total +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_b:
@@ -1772,8 +1761,7 @@ def render_value_bets():
             st.caption(f"{m180['Total +2.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["Total +2.5"], c)
-                yield_color = icono_yield(y, c, mercado="180_ambos_25")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_ambos_25"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_ambos_25"):
                     value_bets_list.append({"Mercado": "Total +2.5 180s", "Probabilidad": m180["Total +2.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1788,8 +1776,7 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = icono_yield(y, c, mercado="180_ambos_neg15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_ambos_neg15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_ambos_neg15"):
                     value_bets_list.append({"Mercado": "Total -1.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_d:
@@ -1801,8 +1788,7 @@ def render_value_bets():
             st.caption(f"{prob_neg*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob_neg, c)
-                yield_color = icono_yield(y, c, mercado="180_ambos_neg25")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="180_ambos_neg25"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="180_ambos_neg25"):
                     value_bets_list.append({"Mercado": "Total -2.5 180s", "Probabilidad": prob_neg, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab3:
@@ -1818,8 +1804,7 @@ def render_value_bets():
             st.caption(f"{p_j1_mas*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_j1_mas, c)
-                yield_color = icono_yield(y, c, mercado="mas_j1")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="mas_j1"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="mas_j1"):
                     value_bets_list.append({"Mercado": f"Más 180s: {j1['nombre_original']}", "Probabilidad": p_j1_mas, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_m2:
@@ -1830,8 +1815,7 @@ def render_value_bets():
             st.caption(f"{p_emp*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_emp, c)
-                yield_color = icono_yield(y, c, mercado="mas_emp")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="mas_emp"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="mas_emp"):
                     value_bets_list.append({"Mercado": "Empate 180s", "Probabilidad": p_emp, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_m3:
@@ -1842,8 +1826,7 @@ def render_value_bets():
             st.caption(f"{p_j2_mas*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_j2_mas, c)
-                yield_color = icono_yield(y, c, mercado="mas_j2")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="mas_j2"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="mas_j2"):
                     value_bets_list.append({"Mercado": f"Más 180s: {j2['nombre_original']}", "Probabilidad": p_j2_mas, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab4:
@@ -1864,8 +1847,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j1_pos_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j1_pos_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j1_pos_15"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1878,8 +1860,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j1_pos_25")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j1_pos_25"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j1_pos_25"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1895,8 +1876,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j1_neg_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j1_neg_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j1_neg_15"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1909,8 +1889,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j1_neg_25")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j1_neg_25"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j1_neg_25"):
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} -2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1931,8 +1910,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j2_pos_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j2_pos_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j2_pos_15"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1945,8 +1923,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j2_pos_25")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j2_pos_25"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j2_pos_25"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} +2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1962,8 +1939,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j2_neg_15")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j2_neg_15"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j2_neg_15"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -1.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1976,8 +1952,7 @@ def render_value_bets():
             st.caption(f"{prob*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(prob, c)
-                yield_color = icono_yield(y, c, mercado="hcap_j2_neg_25")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="hcap_j2_neg_25"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="hcap_j2_neg_25"):
                     value_bets_list.append({"Mercado": f"{j2['nombre_original']} -2.5 Legs", "Probabilidad": prob, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab5:
@@ -1993,8 +1968,7 @@ def render_value_bets():
             st.caption(f"{legs_total_dict['Más de 5.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(legs_total_dict["Más de 5.5"], c)
-                yield_color = icono_yield(y, c, mercado="legs_mas")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="legs_mas"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="legs_mas"):
                     value_bets_list.append({"Mercado": "Más de 5.5 Legs", "Probabilidad": legs_total_dict["Más de 5.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         with col_l2:
@@ -2005,8 +1979,7 @@ def render_value_bets():
             st.caption(f"{legs_total_dict['Menos de 5.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(legs_total_dict["Menos de 5.5"], c)
-                yield_color = icono_yield(y, c, mercado="legs_menos")
-                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                st.markdown(chip_yield(y, c, mercado="legs_menos"), unsafe_allow_html=True)
                 if es_value(y, c, mercado="legs_menos"):
                     value_bets_list.append({"Mercado": "Menos de 5.5 Legs", "Probabilidad": legs_total_dict["Menos de 5.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     with tab6:

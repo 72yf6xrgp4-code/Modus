@@ -328,6 +328,11 @@ def _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta):
     st.write("")
 
 
+def _vol_num(v):
+    """Indice de volatilidad como numero (2 decimales) o '' si no hay dato."""
+    return round(float(str(v).replace(",", ".")), 2) if nivel_volatilidad(v) else ""
+
+
 def _guardar(f, estado, importe, fecha, j1, j2, j1_sel, j2_sel):
     """Apunta la seleccion en la pestana alertas con el estado elegido."""
     import json
@@ -350,8 +355,9 @@ def _guardar(f, estado, importe, fecha, j1, j2, j1_sel, j2_sel):
             "id": f"{fecha}-{j1_sel}-{j2_sel}-{f['texto']}", "fecha": fecha,
             "hora": ahora.strftime("%H:%M"), "partido": f"{j1_sel} vs {j2_sel}",
             "j1": j1_sel, "j2": j2_sel,
-            "vol_j1": nivel_volatilidad(j1.get("volatilidad")) or "",
-            "vol_j2": nivel_volatilidad(j2.get("volatilidad")) or "",
+            # El numero (no solo el nivel): lo usa el seguimiento por mercado
+            "vol_j1": _vol_num(j1.get("volatilidad")),
+            "vol_j2": _vol_num(j2.get("volatilidad")),
             "mercado": f["nombre_mercado"], "seleccion": f["texto"],
             "cuota": f["cuota"], "p_modelo": round(f["p"], 4),
             "edge": round(f["ev"]["edge"], 4), "margen": round(f["ev"]["margen"], 4),

@@ -197,6 +197,31 @@ def icono_yield(y, cuota, mercado=None):
     return "🔴" if y < -0.05 else "⚪"
 
 
+def chip_yield(y, cuota, mercado=None):
+    """Etiqueta compacta del yield para Value Bets: punto de color, valor y
+    una palabra (value / sin margen / sin value / negativo). Mismos colores
+    que icono_yield, sin emojis grandes."""
+    if es_value(y, cuota, mercado=mercado):
+        color, fondo, txt = "#15803d", "rgba(22,163,74,.10)", "value"
+    elif y > 0:
+        color, fondo, txt = "#b45309", "rgba(245,158,11,.12)", "sin margen"
+    elif y < -0.05:
+        color, fondo, txt = "#b91c1c", "rgba(220,38,38,.08)", "negativo"
+    else:
+        color, fondo, txt = "#64748b", "rgba(100,116,139,.10)", "sin value"
+    valor = f"{y*100:+.1f} %".replace(".", ",")
+    return (
+        f"<div style='display:inline-flex;align-items:center;gap:.45rem;"
+        f"background:{fondo};border-radius:999px;padding:.22rem .7rem .22rem .55rem;"
+        f"margin:.15rem 0 .5rem'>"
+        f"<span style='width:.5rem;height:.5rem;border-radius:50%;background:{color};"
+        f"flex:0 0 auto'></span>"
+        f"<span style='font-weight:700;font-size:.95rem;color:{color};"
+        f"font-variant-numeric:tabular-nums'>{valor}</span>"
+        f"<span style='font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;"
+        f"color:{color};opacity:.8'>yield · {txt}</span></div>")
+
+
 def badge_yield(y):
     if y > 0:
         return f"✅ +{y*100:.1f}%"
