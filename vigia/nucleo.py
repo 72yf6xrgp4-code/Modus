@@ -205,8 +205,8 @@ class Vigia:
             "j1": n1, "j2": n2, "vol_j1": v1, "vol_j2": v2,
             "mercado": f["nombre_mercado"], "seleccion": f["texto"],
             "p": round(f["p"], 4), "cuota_justa": f["justa"],
-            "cuota_min_aviso": f["aviso"], "cuota_min_5": f["eur_5"],
-            "cuota_min_7_5": f["eur_7_5"] or "", "cuota_min_verde": f["verde"] or "",
+            "cuota_min_aviso": f["aviso"], "cuota_min_10": f["eur_10"],
+            "cuota_min_15": f["eur_15"] or "", "cuota_min_verde": f["verde"] or "",
             "edge_exigido": round(req["edge_min"], 4),
         } for f in filas])
 

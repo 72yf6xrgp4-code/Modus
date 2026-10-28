@@ -109,18 +109,18 @@ pásame el archivo.
 
 | Regla | Valor |
 |---|---|
-| Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 10 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 12 %, 15 → 16 %, 17 → 20 %) y el importe baja un escalón (7,5 → 5 €, 5 → 2,5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` (en los **avisos del vigía**; para **apuntar en la app** la volatilidad no cuenta: siempre 10 % e importe normal, solo se muestra como información) |
-| Value | edge = p × cuota − 1 ≥ el mínimo exigido (10 %, o más con volatilidad alta) |
+| Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 20 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 22 %, 15 → 26 %, 17 → 30 %) y el importe baja un escalón (15 → 10 €, 10 → 5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` (en los **avisos del vigía**; para **apuntar en la app** la volatilidad no cuenta: siempre 20 % e importe normal, solo se muestra como información) |
+| Value | edge = p × cuota − 1 ≥ el mínimo exigido (20 %, o más con volatilidad alta) |
 | 🟢 | p − 1/cuota ≥ margen del mercado (`MARGEN_POR_MERCADO` de `config.py`: ganador 6, total de legs 8, hándicaps y 180s 5). Resultado exacto nunca 🟢 |
-| Importe | edge 10–15 % → 2,5 €; 15–20 % → 5 €; ≥ 20 % → 7,5 €. Más de 2,5 € solo si 🟢 y cuota ≤ 4,00 |
+| Importe | edge 20–35 % → 5 €; 35–50 % → 10 €; más del 50 % → 15 €. Más de 5 € solo si 🟢 y cuota ≤ 4,00 |
 | Por partido | una apuesta como máximo (las marcadas «no apostada» no cuentan) |
-| Tope | 50 € por jornada, recortando en múltiplos de 2,5; una «no apostada» devuelve su importe |
+| Tope | 50 € por jornada más tu beneficio real acumulado (las apuestas marcadas «apostada» ya liquidadas; si vas en pérdidas, 50 €). Se recorta en múltiplos de 5 €; una «no apostada» devuelve su importe |
 | Margen > 20 puntos | «⚠️ REVISAR», sin importe |
 
 **Cuotas mínimas** (pestaña `cuotas_minimas`): cuota justa = 1/p; para avisar
-(edge 10 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,10/p; para 5 € = 1,15/p; para 7,5 € = 1,20/p; para 🟢 =
-1/(p − margen). Siempre se redondean **hacia arriba**: con p = 0,742 la de
-avisar es 1,49, no 1,48, porque a 1,48 el edge sería 9,8 %.
+(edge 20 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,20/p;
+para 10 € = 1,35/p; para 15 € = 1,50/p; para 🟢 = 1/(p − margen). Siempre se
+redondean **hacia arriba** (con p = 0,742, la de avisar es 1,62).
 
 **Cuándo avisa el vigía:** los partidos no tienen hora fija (empiezan uno tras
 otro) y Winamax publica sus mercados poco antes. Por eso avisa de cada partido

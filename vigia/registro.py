@@ -23,14 +23,14 @@ COLUMNAS_ALERTAS = [
 COLUMNAS_LOG = ["fecha", "hora", "tipo", "partido", "detalle"]
 
 # Una fila por seleccion de cada partido avisado por el vigia.
-# cuota_min_aviso = edge 10 % (2,5 EUR); cuota_min_5 = edge 15 %;
-# cuota_min_7_5 = edge 20 % (5 y 7,5 EUR solo si ademas es 🟢 y cuota <= 4);
+# cuota_min_aviso = edge 20 % (5 EUR); cuota_min_10 = edge 35 %;
+# cuota_min_15 = edge 50 % (10 y 15 EUR solo si ademas es 🟢 y cuota <= 4);
 # cuota_min_verde = la que hace la seleccion 🟢 (vacia en resultado exacto).
-# edge_exigido = 10 %, o mas con volatilidad alta (vigia/reglas.py).
+# edge_exigido = 20 %, o mas con volatilidad alta (vigia/reglas.py).
 COLUMNAS_CUOTAS = [
     "fecha", "hora", "inicio_estimado", "jornada", "orden", "j1", "j2",
     "vol_j1", "vol_j2", "mercado", "seleccion", "p", "cuota_justa",
-    "cuota_min_aviso", "cuota_min_5", "cuota_min_7_5", "cuota_min_verde",
+    "cuota_min_aviso", "cuota_min_10", "cuota_min_15", "cuota_min_verde",
     "edge_exigido",
 ]
 
@@ -74,6 +74,24 @@ def gasta_tope(fila):
     """Una alerta gasta tope si es apuesta y no esta marcada 'no apostada'."""
     return (fila.get("tipo_aviso") == AVISO_APUESTA
             and fila.get("estado") != ESTADO_NO_APOSTADA)
+
+
+def beneficio_real(filas, hasta=None):
+    """Beneficio acumulado de las apuestas marcadas 'apostada' ya liquidadas
+    (de fechas anteriores a `hasta`, si se indica)."""
+    return sum(beneficio_fila(f) for f in filas
+               if f.get("tipo_aviso") == AVISO_APUESTA
+               and f.get("estado") == ESTADO_APOSTADA
+               and f.get("resultado") in ("ganada", "perdida")
+               and (hasta is None or str(f.get("fecha", "")) < hasta))
+
+
+def tope_del_dia(filas, base=None):
+    """Tope de la jornada: la base (50 EUR) mas el beneficio real acumulado.
+    Si vas en perdidas, se queda en la base."""
+    from vigia.reglas import TOPE_DIARIO
+    base = TOPE_DIARIO if base is None else base
+    return base + max(0.0, beneficio_real(filas))
 
 
 def gastado_del_dia(filas, fecha):
@@ -179,7 +197,7 @@ def _importe_con_volatilidad(f):
     if not req["ok"] or num(f.get("edge")) < req["edge_min"] - 1e-9:
         return None
     imp = num(f.get("importe"))
-    return max(reglas.UNIDAD, imp - reglas.UNIDAD) if req["rebaja"] else imp
+    return reglas.bajar_escalon(imp) if req["rebaja"] else imp
 
 
 def _acumular(g, f, imp):

@@ -75,7 +75,7 @@ def resumen_aviso(filas, j1, j2):
 def evaluar_cuotas(calc, cuotas_sel, j1, j2):
     """Evalua con tus reglas una lista de cuotas [(sel, cuota, origen)].
 
-    Para APUNTAR la volatilidad no cuenta (10 % de edge e importe normal).
+    Para APUNTAR la volatilidad no cuenta (20 % de edge e importe normal).
     Si la misma seleccion llega dos veces (casilla y boton), manda la
     primera. Devuelve filas ordenadas por edge con sel, texto,
     nombre_mercado, cuota, p, justa, ev (de reglas.evaluar) y origen.

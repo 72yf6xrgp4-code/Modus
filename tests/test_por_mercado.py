@@ -12,8 +12,8 @@ def _f(mercado, importe, cuota, resultado, estado="apostada", vol=(7, 9), edge=0
 FILAS = [
     _f("Ganador", 7.5, 2.0, "ganada"),                          # +7,5
     _f("Ganador", 5, 1.8, "perdida", estado="no apostada"),      # -5 (solo "todas")
-    _f("Hándicap", 7.5, 2.2, "ganada", vol=(14, 8), edge=0.20),  # alta: exige 14 %, baja a 5
-    _f("Hándicap", 2.5, 2.0, "perdida", vol=(14, 8), edge=0.12), # alta: no llega al 14 %
+    _f("Hándicap", 7.5, 2.2, "ganada", vol=(14, 8), edge=0.30),  # alta: exige 24 %, baja a 5
+    _f("Hándicap", 2.5, 2.0, "perdida", vol=(14, 8), edge=0.22), # alta: no llega al 24 %
     _f("Más 180s", 2.5, 3.0, "ganada", vol=(19, 8)),             # > 18: fuera con volatilidad
     _f("Más 180s", 2.5, 3.0, "", vol=("", 8)),                   # sin liquidar, sin dato
     {"tipo_aviso": "revisar", "mercado": "Ganador", "importe": 0},

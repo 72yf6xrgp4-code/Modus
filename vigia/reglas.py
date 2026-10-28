@@ -2,17 +2,20 @@
 vigia/reglas.py - Reglas de apuesta (funciones puras, sin red).
 
   - Volatilidad del partido = la del jugador mas irregular de los dos.
-    Hasta 12 (baja o media): edge minimo 10 %. Por encima de 12 (alta) no
+    Hasta 12 (baja o media): edge minimo 20 %. Por encima de 12 (alta) no
     se descarta: se exige 2 puntos mas de edge por cada punto que pase de
-    12 (13 -> 12 %, 15 -> 16 %, 17 -> 20 %) y el importe baja un escalon
-    (7,5 -> 5; 5 -> 2,5). Por encima de 18, o sin dato, se descarta.
+    12 (13 -> 22 %, 15 -> 26 %, 17 -> 30 %) y el importe baja un escalon
+    (15 -> 10; 10 -> 5). Por encima de 18, o sin dato, se descarta.
+    (Esto lo aplica el vigia; para apuntar en la app la volatilidad no
+    cuenta.)
   - Edge = p_modelo * cuota - 1. Aviso si edge >= el minimo exigido.
   - Margen = p_modelo - 1/cuota. 🟢 si llega al margen del mercado (el
     mismo de la app: config.MARGENES_VALUE). Resultado exacto nunca 🟢.
-  - Importe: edge 10-15 % -> 2,5 EUR; 15-20 % -> 5; >= 20 % -> 7,5. Solo
-    pasa de 2,5 si es 🟢 y la cuota es <= 4,00.
+  - Importe: edge 20-35 % -> 5 EUR; 35-50 % -> 10; mas del 50 % -> 15.
+    Solo pasa de 5 si es 🟢 y la cuota es <= 4,00.
   - Margen > 20 puntos -> "REVISAR": sin importe ni gasto de tope.
-  - Tope diario: se recorta a lo que quede, en multiplos de 2,5.
+  - Tope por jornada: 50 EUR mas el beneficio real acumulado (si vas en
+    perdidas, 50). Se recorta a lo que quede, en multiplos de 5.
   - Cuotas minimas: la cuota a partir de la cual se cumple cada regla,
     redondeada SIEMPRE hacia arriba (a 2 decimales) para que, si la casa
     da exactamente esa cuota, la regla se cumpla de verdad.
@@ -23,15 +26,17 @@ import math
 from modelo.value import calcular_yield, es_value, margen_mercado
 from modelo.volatilidad import nivel_volatilidad
 
-EDGE_MIN = 0.10
+EDGE_MIN = 0.20
+# Importe segun el edge: (edge desde, euros), de mayor a menor
+TRAMOS = [(0.50, 15.0), (0.35, 10.0), (0.20, 5.0)]
 # Volatilidad alta: edge extra por punto por encima de VOL_ALTA y limite
 VOL_ALTA = 12.0
 VOL_EDGE_POR_PUNTO = 0.02
 VOL_MAXIMA = 18.0
-UNIDAD = 2.5
+UNIDAD = 5.0      # importe minimo y escalon del tope
 CUOTA_MAX_SUBIR = 4.0
 MARGEN_REVISAR = 0.20
-TOPE_DIARIO = 50.0
+TOPE_DIARIO = 50.0   # tope base por jornada (crece con el beneficio real)
 
 # Tipo de seleccion (modelo.motor.probabilidad) -> mercado para el margen
 MERCADO_DE_TIPO = {
@@ -90,19 +95,21 @@ def evaluar(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
     revisar = margen > MARGEN_REVISAR
     importe = 0.0
     if edge >= edge_min - 1e-9 and not revisar:
-        if edge >= 0.20 - 1e-9:
-            importe = 7.5
-        elif edge >= 0.15 - 1e-9:
-            importe = 5.0
-        else:
-            importe = 2.5
+        importe = next(e for desde, e in TRAMOS
+                       if edge > desde - 1e-9 or desde == TRAMOS[-1][0])
         if not (verde and cuota <= CUOTA_MAX_SUBIR):
             importe = min(importe, UNIDAD)
         if rebaja:
-            importe = max(UNIDAD, importe - UNIDAD)
+            importe = bajar_escalon(importe)
     return {"edge": edge, "margen": margen, "verde": verde,
             "revisar": revisar and edge >= edge_min - 1e-9,
             "importe": importe}
+
+
+def bajar_escalon(importe_eur):
+    """15 -> 10, 10 -> 5; el minimo (5) no baja. Importes antiguos que no
+    son multiplo de 5 (2,5 o 7,5) bajan igual sin pasar de su minimo."""
+    return max(min(importe_eur, UNIDAD), importe_eur - UNIDAD)
 
 
 def importe(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
@@ -111,7 +118,7 @@ def importe(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
 
 
 def aplicar_tope(importe_eur, gastado, tope=TOPE_DIARIO):
-    """Recorta el importe a lo que queda del tope, en multiplos de 2,5."""
+    """Recorta el importe a lo que queda del tope, en multiplos de 5."""
     queda = max(0.0, tope - gastado)
     queda = math.floor(queda / UNIDAD + 1e-9) * UNIDAD
     return min(importe_eur, queda)
@@ -186,29 +193,32 @@ def cuota_minima_verde(mercado, p):
 def cuotas_minimas(mercado, p, edge_min=EDGE_MIN, rebaja=False):
     """Todas las cuotas de referencia de una seleccion.
 
-    aviso    la que llega al edge exigido (2,5 EUR)
-    eur_5    la que da 5 EUR si ademas es 🟢 y cuota <= 4 (edge 15 %; con
-             volatilidad alta hace falta el escalon de 7,5 -> edge 20 %)
-    eur_7_5  la que da 7,5 EUR (edge 20 %); None con volatilidad alta
+    aviso    la que llega al edge exigido (5 EUR)
+    eur_10   la que da 10 EUR si ademas es 🟢 y cuota <= 4 (edge 35 %; con
+             volatilidad alta hace falta el escalon de 15 -> edge 50 %)
+    eur_15   la que da 15 EUR (edge 50 %); None con volatilidad alta
     verde    la que la hace 🟢 (None en resultado exacto)
     """
-    e5 = 0.20 if rebaja else 0.15
+    e10 = 0.50 if rebaja else 0.35
     return {
         "justa": round(1.0 / p, 2) if p > 0 else None,
         "aviso": cuota_minima(p, edge_min),
-        "eur_5": cuota_minima(p, max(e5, edge_min)),
-        "eur_7_5": None if rebaja else cuota_minima(p, max(0.20, edge_min)),
+        "eur_10": cuota_minima(p, max(e10, edge_min)),
+        "eur_15": None if rebaja else cuota_minima(p, max(0.50, edge_min)),
         "verde": cuota_minima_verde(mercado, p),
     }
 
 
-def apuntar(alertas, fecha, j1, j2, ev, tope=TOPE_DIARIO):
+def apuntar(alertas, fecha, j1, j2, ev, tope=None):
     """Importe con el que se puede apuntar una apuesta desde la app y, si
     es 0, el motivo. Reglas: una apuesta por partido y dia (las marcadas
-    'no apostada' no cuentan), sin importe si es REVISAR o no llega al 10 %
-    de edge, y recortada al tope que quede del dia."""
+    'no apostada' no cuentan), sin importe si es REVISAR o no llega al 20 %
+    de edge, y recortada al tope que quede del dia (por defecto, el tope
+    que crece con el beneficio: registro.tope_del_dia)."""
     from modelo.util import normalizar_nombre
     from vigia import registro
+    if tope is None:
+        tope = registro.tope_del_dia(alertas)
     par = {normalizar_nombre(j1), normalizar_nombre(j2)}
     for f in alertas:
         if (f.get("fecha") == fecha and registro.gasta_tope(f)

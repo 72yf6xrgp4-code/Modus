@@ -122,17 +122,17 @@ def test_reinicio_no_repite_avisos():
 
 
 def test_volatilidad_alta_exige_mas_edge_y_se_avisa():
-    # Self tiene volatilidad 13: no se descarta, se exige un 12 % de edge
+    # Self tiene volatilidad 13: no se descarta, se exige un 22 % de edge
     cal = _cal(("Andy Baetens", "Self"))
     v, hoja, notif, _ = montar(cal, datetime(2026, 11, 5, 13, 55, tzinfo=M))
     v.ciclo()
     texto, _ = notif.enviados[0]
-    assert texto.endswith("· ⚠️ vol 13,0: edge ≥12 %") and len(texto) < 200
+    assert texto.endswith("· ⚠️ vol 13,0: edge ≥22 %") and len(texto) < 200
     fila = next(f for f in hoja.cuotas if f["seleccion"] == "Gana Baetens")
-    assert fila["edge_exigido"] == 0.12
+    assert fila["edge_exigido"] == 0.22
     from vigia import reglas
-    assert fila["cuota_min_aviso"] == reglas.cuota_minima(fila["p"], 0.12)
-    assert fila["cuota_min_7_5"] == ""          # con volatilidad alta no hay 7,5
+    assert fila["cuota_min_aviso"] == reglas.cuota_minima(fila["p"], 0.22)
+    assert fila["cuota_min_15"] == ""           # con volatilidad alta no hay 15
 
 
 def test_volatilidad_mayor_de_18_o_sin_dato_se_descarta_y_se_anota():

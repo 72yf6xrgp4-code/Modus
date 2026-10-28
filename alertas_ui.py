@@ -25,7 +25,8 @@ from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, AVISO_APUESTA,
                             ESTADO_NO_APOSTADA, ESTADO_PENDIENTE,
                             filas_a_dicts, gastado_del_dia, num,
                             resumen_apuestas, beneficio_fila)
-from vigia.registro import por_mercado, por_mercado_y_volatilidad
+from vigia.registro import (beneficio_real, por_mercado, por_mercado_y_volatilidad,
+                            tope_del_dia)
 from vigia.reglas import TOPE_DIARIO
 
 
@@ -157,9 +158,12 @@ def render_alertas():
     gastado = gastado_del_dia(filas, hoy)
     c1, c2, c3 = st.columns(3)
     c1.metric("Apuestas hoy", len(de_hoy))
-    c2.metric("Tope gastado", _eur(gastado), help=f"Tope diario: {_eur(TOPE_DIARIO)}")
-    c3.metric("Queda", _eur(max(0.0, TOPE_DIARIO - gastado)))
-    st.progress(min(1.0, gastado / TOPE_DIARIO) if TOPE_DIARIO else 0.0)
+    tope = tope_del_dia(filas)
+    c2.metric("Tope gastado", _eur(gastado),
+              help=f"Tope de hoy: {_eur(tope)} = {_eur(TOPE_DIARIO)} + tu beneficio "
+                   f"real acumulado ({_eur(beneficio_real(filas))}, si es positivo)")
+    c3.metric("Queda", _eur(max(0.0, tope - gastado)))
+    st.progress(min(1.0, gastado / tope) if tope else 0.0)
 
     st.subheader("Hoy")
     if not de_hoy:

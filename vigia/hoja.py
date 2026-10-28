@@ -47,8 +47,9 @@ class HojaGoogle:
         cabecera = ws.row_values(1)
         if not cabecera:
             ws.append_row(columnas)
-        elif len(cabecera) < len(columnas) and cabecera == columnas[:len(cabecera)]:
-            # Version nueva con columnas anadidas al final: ampliar cabecera
+        elif cabecera != columnas:
+            # Version nueva (columnas anadidas o renombradas): cabecera nueva
+            log.warning("Actualizo la cabecera de %s: %s", nombre, columnas)
             if ws.col_count < len(columnas):
                 ws.add_cols(len(columnas) - ws.col_count)
             ws.update(range_name="A1", values=[columnas])

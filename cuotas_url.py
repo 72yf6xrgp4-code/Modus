@@ -26,7 +26,7 @@ from vigia import reglas
 from vigia.boton import (DatosNoValidos, casilla, decodificar, preparar,
                          seleccion_de_casilla)
 from vigia.cuotas import evaluar_cuotas
-from vigia.registro import estado_partido, gastado_del_dia
+from vigia.registro import estado_partido, gastado_del_dia, tope_del_dia
 from vigia.mercados import texto_seleccion
 from vigia.nombres import emparejar
 
@@ -157,7 +157,7 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
     } for f in filas])
     with st.expander(f"📋 Todas las cuotas leídas ({len(filas)}) y su value"):
         st.dataframe(tabla, use_container_width=True, hide_index=True)
-        st.caption("Cuota mínima = la que da un 10 % de edge.")
+        st.caption(f"Cuota mínima = la que da un {reglas.EDGE_MIN*100:.0f} % de edge.")
         if w["sin_asignar"]:
             st.markdown(f"**Sin asignar ({len(w['sin_asignar'])})**: mercados que el modelo no cubre.")
             st.dataframe(pd.DataFrame(w["sin_asignar"], columns=["Mercado", "Salida", "Cuota"]),
@@ -245,13 +245,15 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
             st.caption(f"⚠️ No puedo leer la pestaña alertas ({err}): no se podrá marcar.")
     gastado = gastado_del_dia(alertas, fecha)
     marcadas, apuesta = estado_partido(alertas, fecha, j1_sel, j2_sel)
-    queda = max(0.0, reglas.TOPE_DIARIO - gastado)
+    tope = tope_del_dia(alertas)
+    queda = max(0.0, tope - gastado)
     st.markdown(f"<div class='ap-tope'><span>Hoy: {_eur(gastado)} de "
-                f"{_eur(reglas.TOPE_DIARIO)}</span><span>Quedan {_eur(queda)}</span>"
+                f"{_eur(tope)}</span><span>Quedan {_eur(queda)}</span>"
                 f"<span>Una apuesta por partido</span></div>", unsafe_allow_html=True)
 
     if not apostables:
-        st.info("Ninguna cuota llega al 10 % de edge: hoy no hay apuesta en este partido.")
+        st.info(f"Ninguna cuota llega al {reglas.EDGE_MIN*100:.0f} % de edge: no hay "
+                "apuesta en este partido.")
     for i, f in enumerate(apostables):
         _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta)
     for f in revisar:
@@ -261,7 +263,8 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     casi = [f for f in filas if f["ev"]["verde"] and not f["ev"]["importe"]
             and not f["ev"]["revisar"]]
     if casi:
-        st.caption("🟢 También con value, pero sin llegar al 10 % de edge (no se apuestan): "
+        st.caption(f"🟢 También con value, pero sin llegar al {reglas.EDGE_MIN*100:.0f} % "
+                   "de edge (no se apuestan): "
                    + " · ".join(f"{f['texto']} @{_num(f['cuota'])} "
                                 f"({f['ev']['edge']*100:+.1f} %)" for f in casi))
     v1 = nivel_volatilidad(j1.get("volatilidad")) or "sin dato"
@@ -362,7 +365,7 @@ def _guardar(f, estado, importe, fecha, j1, j2, j1_sel, j2_sel):
             "cuota": f["cuota"], "p_modelo": round(f["p"], 4),
             "edge": round(f["ev"]["edge"], 4), "margen": round(f["ev"]["margen"], 4),
             "verde": "🟢" if f["ev"]["verde"] else "", "importe": importe,
-            "tope_restante": max(0.0, reglas.TOPE_DIARIO - gastado
+            "tope_restante": max(0.0, tope_del_dia(alertas or []) - gastado
                                  - (importe if estado == "apostada" else 0)),
             "estado": estado, "resultado": "", "beneficio": "",
             "tipo_aviso": "apuesta",
