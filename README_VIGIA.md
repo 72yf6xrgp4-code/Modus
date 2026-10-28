@@ -135,3 +135,23 @@ de las ventanas de jornada; si la API fallara, usa el CSV y lo anota en el log.
 separado, **sin volatilidad** (todas las apuestas con value y las que hiciste)
 y **con volatilidad** (aplicando la regla del vigía y por nivel de volatilidad
 del partido), para ver en qué mercados y con qué volatilidad gana el modelo.
+
+**Eliminar una alerta a mano** (🔔 Alertas): cada apuesta de hoy tiene, junto a
+«Apostada» y «No apostada», un botón 🗑️ que pide confirmación; las anteriores
+se borran desde el desplegable «Todas las alertas anteriores» → «Eliminar una
+alerta anterior». Se borra la fila de la pestaña `alertas` (antes comprueba que
+sigue siendo la misma) y deja de contar en el tope y en el seguimiento.
+
+**Cuotas de Winamax guardadas** (pestaña `cuotas_winamax`): cada vez que pulsas
+«Modus value» en la app con tu usuario admin, se guardan **todas** las cuotas
+leídas (una vez por lectura), con la probabilidad del modelo, la cuota justa,
+el edge, 🟢 y el importe que tocaría. Las salidas que la app no sabe asignar
+también se guardan, sin probabilidad. El vigía rellena la columna `resultado`
+(ganada/perdida) cuando liquida. En 🔔 Alertas → **Winamax frente al modelo**:
+
+- **Por edge:** qué habrías ganado apostando 1 € a todas las cuotas leídas,
+  por tramos de edge (para ver desde qué edge gana de verdad el modelo).
+- **Modelo vs Winamax:** quién acierta más (Brier: más bajo, mejor) con la
+  probabilidad del modelo frente a la de Winamax sin su margen, por mercado.
+- **Margen de Winamax:** cuánto se queda la casa en cada mercado
+  (suma de 1/cuota − 1).

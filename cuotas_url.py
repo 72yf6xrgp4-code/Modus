@@ -147,6 +147,7 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
     calc = calcular_partido(j1, j2, j1_saca_primero=True)
     filas = evaluar_cuotas(calc, [(s["sel"], s["cuota"], "winamax") for s in w["selecciones"]],
                            j1_sel, j2_sel)
+    _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel)
     tabla = pd.DataFrame([{
         "Selección": f["texto"], "Mercado": f["nombre_mercado"],
         "Cuota": _num(f["cuota"]), "Modelo": f"{f['p']*100:.1f} %",
@@ -323,6 +324,46 @@ def _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta):
                  disabled=not no_ok):
         _guardar(f, "no apostada", ev["importe"], fecha, j1, j2, j1_sel, j2_sel)
     st.write("")
+
+
+def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
+    """Guarda en la pestana cuotas_winamax TODAS las cuotas leidas con el
+    boton (una vez por pulsacion), con la probabilidad del modelo y el edge
+    de ese momento, para comparar y sacar estadisticas."""
+    import json
+    lectura = f"{datos['id'] or j1_sel}-{datos['h']}"
+    if not es_admin() or st.session_state.get("_wm_guardada") == lectura:
+        return
+    from alertas_ui import anadir_winamax
+    ahora = datetime.now(MADRID)
+    base = {
+        "fecha": fecha_jornada_madrid(), "hora": ahora.strftime("%H:%M"),
+        "lectura": datos["h"], "match_id": datos["id"],
+        "inicio": (datetime.fromtimestamp(datos["t"], MADRID).strftime("%Y-%m-%d %H:%M")
+                   if datos["t"] else ""),
+        "j1": j1_sel, "j2": j2_sel,
+        "vol_j1": _vol_num(j1.get("volatilidad")), "vol_j2": _vol_num(j2.get("volatilidad")),
+        "fuente": datos.get("f", ""), "resultado": "",
+    }
+    filas = []
+    for s in w["selecciones"]:
+        p = probabilidad(calc, s["sel"])
+        mercado = reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]]
+        ev = reglas.evaluar(mercado, p, s["cuota"])
+        filas.append(dict(base, titulo=s["titulo"], salida=s["label"], mercado=s["nombre"],
+                          seleccion=texto_seleccion(s["sel"], j1_sel, j2_sel),
+                          cuota=s["cuota"], p_modelo=round(p, 4),
+                          cuota_justa=round(1.0 / p, 2), edge=round(ev["edge"], 4),
+                          verde="🟢" if ev["verde"] else "", importe=ev["importe"],
+                          seleccion_json=json.dumps(s["sel"], ensure_ascii=False)))
+    for titulo, salida, cuota in w["sin_asignar"]:
+        filas.append(dict(base, titulo=titulo, salida=salida, cuota=cuota))
+    ok, error = anadir_winamax(filas)
+    if ok:
+        st.session_state["_wm_guardada"] = lectura
+        st.caption(f"💾 {len(filas)} cuotas guardadas en la pestaña cuotas_winamax.")
+    else:
+        st.caption(f"⚠️ No se pudieron guardar las cuotas: {error}")
 
 
 def _vol_num(v):

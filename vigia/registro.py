@@ -11,6 +11,7 @@ from modelo.util import safe_float
 HOJA_ALERTAS = "alertas"
 HOJA_LOG = "vigia_log"
 HOJA_CUOTAS = "cuotas_minimas"
+HOJA_WINAMAX = "cuotas_winamax"
 
 COLUMNAS_ALERTAS = [
     "id", "fecha", "hora", "partido", "j1", "j2", "vol_j1", "vol_j2",
@@ -32,6 +33,16 @@ COLUMNAS_CUOTAS = [
     "vol_j1", "vol_j2", "mercado", "seleccion", "p", "cuota_justa",
     "cuota_min_aviso", "cuota_min_10", "cuota_min_15", "cuota_min_verde",
     "edge_exigido",
+]
+
+# Una fila por cuota leida con el boton "Modus value" (tambien las que el
+# modelo no cubre, para medir el margen de Winamax). 'lectura' identifica
+# cada pulsacion del boton; 'resultado' (ganada/perdida) lo apunta el vigia.
+COLUMNAS_WINAMAX = [
+    "fecha", "hora", "lectura", "match_id", "inicio", "j1", "j2", "vol_j1",
+    "vol_j2", "titulo", "salida", "mercado", "seleccion", "cuota", "p_modelo",
+    "cuota_justa", "edge", "verde", "importe", "fuente", "resultado",
+    "seleccion_json",
 ]
 
 ESTADO_PENDIENTE = "pendiente"
@@ -263,3 +274,108 @@ def por_mercado_y_volatilidad(filas):
                                    "beneficio": 0.0})
         _acumular(g, f, num(f.get("importe")))
     return {k: _cerrar(v) for k, v in res.items()}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ESTADISTICAS DE LAS CUOTAS DE WINAMAX
+# ─────────────────────────────────────────────────────────────────────────────
+
+TRAMOS_EDGE = [(None, 0.0, "negativo"), (0.0, 0.10, "0-10 %"), (0.10, 0.20, "10-20 %"),
+               (0.20, 0.35, "20-35 %"), (0.35, 0.50, "35-50 %"), (0.50, None, "más de 50 %")]
+
+
+def _ultimas_lecturas(filas):
+    """Si el mismo partido se leyo varias veces, la ultima lectura de cada
+    salida (la mas cercana al inicio)."""
+    ultimas = {}
+    for f in filas:
+        clave = (f.get("fecha"), f.get("match_id") or f"{f.get('j1')}|{f.get('j2')}",
+                 f.get("titulo"), f.get("salida"))
+        if clave not in ultimas or num(f.get("lectura")) >= num(ultimas[clave].get("lectura")):
+            ultimas[clave] = f
+    return list(ultimas.values())
+
+
+def estadisticas_winamax(filas):
+    """Comparacion de las cuotas de Winamax con el modelo.
+
+    Devuelve dict con:
+      resumen    lecturas, cuotas, liquidadas
+      margen     por mercado: margen medio de Winamax (suma de 1/cuota - 1)
+      precision  por mercado (liquidadas): Brier del modelo y de Winamax
+                 (menor = mejor) y quien acierta mas
+      tramos     por tramo de edge: apuestas de 1 EUR a todas, aciertos, ROI
+      mercados   por mercado, solo con edge >= 20 % (tu regla): n, ROI
+    """
+    filas = _ultimas_lecturas(filas)
+    resumen = {"lecturas": len({f.get("lectura") for f in filas}),
+               "cuotas": len(filas),
+               "liquidadas": sum(1 for f in filas if f.get("resultado") in ("ganada", "perdida"))}
+
+    # Margen de Winamax: grupos (lectura, titulo) con 2 o mas salidas
+    grupos = {}
+    for f in filas:
+        if num(f.get("cuota")) > 1:
+            grupos.setdefault((f.get("lectura"), f.get("titulo")), []).append(f)
+    margen, prob_winamax = {}, {}
+    for (lect, tit), fs in grupos.items():
+        inversa = sum(1.0 / num(f["cuota"]) for f in fs)
+        for f in fs:   # probabilidad de Winamax sin su margen
+            prob_winamax[id(f)] = (1.0 / num(f["cuota"])) / inversa if len(fs) > 1 else None
+        if len(fs) >= 2:
+            m = fs[0].get("mercado") or tit
+            margen.setdefault(m, []).append(inversa - 1.0)
+    margen = [{"mercado": m, "mercados": len(v), "margen": sum(v) / len(v)}
+              for m, v in sorted(margen.items())]
+
+    # Precision: Brier del modelo y de Winamax en las liquidadas
+    prec = {}
+    for f in filas:
+        if f.get("resultado") not in ("ganada", "perdida") or f.get("p_modelo") in ("", None):
+            continue
+        q = prob_winamax.get(id(f))
+        if q is None:
+            continue
+        y = 1.0 if f["resultado"] == "ganada" else 0.0
+        for m in (f.get("mercado") or "?", "TOTAL"):
+            g = prec.setdefault(m, {"n": 0, "modelo": 0.0, "winamax": 0.0})
+            g["n"] += 1
+            g["modelo"] += (num(f["p_modelo"]) - y) ** 2
+            g["winamax"] += (q - y) ** 2
+    precision = []
+    for m in sorted(prec, key=lambda k: (k == "TOTAL", k)):
+        g = prec[m]
+        bm, bw = g["modelo"] / g["n"], g["winamax"] / g["n"]
+        precision.append({"mercado": m, "n": g["n"], "brier_modelo": bm, "brier_winamax": bw,
+                          "mejor": "modelo" if bm < bw else ("Winamax" if bw < bm else "igual")})
+
+    # Apostar 1 EUR a todas, por tramo de edge y (edge >= 20 %) por mercado
+    def acumula(g, f):
+        g["n"] += 1
+        if f["resultado"] == "ganada":
+            g["ganadas"] += 1
+            g["beneficio"] += num(f["cuota"]) - 1.0
+        else:
+            g["beneficio"] -= 1.0
+
+    tramos = {t[2]: {"n": 0, "ganadas": 0, "beneficio": 0.0} for t in TRAMOS_EDGE}
+    mercados = {}
+    for f in filas:
+        if f.get("resultado") not in ("ganada", "perdida") or f.get("edge") in ("", None):
+            continue
+        e = num(f["edge"])
+        for desde, hasta, nombre in TRAMOS_EDGE:
+            if (desde is None or e >= desde) and (hasta is None or e < hasta):
+                acumula(tramos[nombre], f)
+                break
+        if e >= 0.20:
+            acumula(mercados.setdefault(f.get("mercado") or "?",
+                                        {"n": 0, "ganadas": 0, "beneficio": 0.0}), f)
+
+    def cerrar(nombre, g):
+        return {"nombre": nombre, "n": g["n"], "ganadas": g["ganadas"],
+                "beneficio": g["beneficio"], "roi": g["beneficio"] / g["n"] if g["n"] else None}
+
+    return {"resumen": resumen, "margen": margen, "precision": precision,
+            "tramos": [cerrar(t[2], tramos[t[2]]) for t in TRAMOS_EDGE],
+            "mercados": [cerrar(m, g) for m, g in sorted(mercados.items())]}
