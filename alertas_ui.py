@@ -1,5 +1,5 @@
 """
-alertas_ui.py - Pestana 'Alertas': las apuestas apuntadas desde Value Bets
+alertas_ui.py - Pestana 'Apuestas' (antes 'Alertas'): las apuestas apuntadas desde Value Bets
 (boton "Modus value" -> "Apuntar apuesta"), el tope de la jornada y el
 historico con resultado, beneficio y ROI.
 
@@ -238,7 +238,7 @@ def render_alertas():
     st.caption("Apuestas marcadas en Value Bets («La he apostado» / «No la apuesto»). "
                "Se actualiza al pulsar **Actualizar** (o solo, cada minuto como mucho).")
     if not es_admin():
-        st.info("🔒 Las alertas solo se ven en modo administrador.")
+        st.info("🔒 Las apuestas solo se ven en modo administrador.")
         return
     _instalar_boton()
     _boton_actualizar("al_actualizar")
@@ -280,11 +280,11 @@ def render_alertas():
     _evolucion(filas)
     _por_mercado(filas)
     if anteriores:
-        with st.expander(f"📋 Todas las alertas anteriores ({len(anteriores)})"):
+        with st.expander(f"📋 Todas las apuestas anteriores ({len(anteriores)})"):
             st.dataframe(_tabla(anteriores), use_container_width=True, hide_index=True)
-            st.markdown("**Eliminar una alerta anterior**")
+            st.markdown("**Eliminar una apuesta anterior**")
             lista = list(reversed(anteriores))
-            i = st.selectbox("Alerta", range(len(lista)), key="al_del_sel",
+            i = st.selectbox("Apuesta", range(len(lista)), key="al_del_sel",
                              format_func=lambda k: (f"{lista[k].get('fecha')} {lista[k].get('hora')} · "
                                                     f"{lista[k].get('partido')} · "
                                                     f"{lista[k].get('seleccion')}"),
