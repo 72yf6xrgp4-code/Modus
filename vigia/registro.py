@@ -20,6 +20,9 @@ COLUMNAS_ALERTAS = [
     # Columnas tecnicas (al final)
     "tipo_aviso", "inicio", "match_id", "jornada", "orden_j1",
     "seleccion_json",
+    # Lo que de verdad apostaste si cambiaste el importe a mano (vacio = el
+    # recomendado). Al final para no descolocar las filas antiguas.
+    "importe_real",
 ]
 COLUMNAS_LOG = ["fecha", "hora", "tipo", "partido", "detalle"]
 
@@ -87,10 +90,17 @@ def gasta_tope(fila):
             and fila.get("estado") != ESTADO_NO_APOSTADA)
 
 
+def importe_apostado(fila):
+    """Lo que de verdad apostaste: el importe cambiado a mano (importe_real)
+    o, si no lo cambiaste, el recomendado (importe)."""
+    real = str(fila.get("importe_real") or "").strip()
+    return num(real) if real else num(fila.get("importe"))
+
+
 def beneficio_real(filas, hasta=None):
     """Beneficio acumulado de las apuestas marcadas 'apostada' ya liquidadas
-    (de fechas anteriores a `hasta`, si se indica)."""
-    return sum(beneficio_fila(f) for f in filas
+    (de fechas anteriores a `hasta`, si se indica), con lo que apostaste."""
+    return sum(beneficio_fila(f, real=True) for f in filas
                if f.get("tipo_aviso") == AVISO_APUESTA
                and f.get("estado") == ESTADO_APOSTADA
                and f.get("resultado") in ("ganada", "perdida")
@@ -106,14 +116,15 @@ def tope_del_dia(filas, base=None):
 
 
 def gastado_del_dia(filas, fecha):
-    return sum(num(f.get("importe")) for f in filas
+    return sum(importe_apostado(f) for f in filas
                if f.get("fecha") == fecha and gasta_tope(f))
 
 
 def resumen_apuestas(filas, solo_apostadas):
     """Aciertos, beneficio y ROI de las alertas liquidadas.
 
-    solo_apostadas=True  -> lo que de verdad se aposto (estado 'apostada').
+    solo_apostadas=True  -> lo que de verdad se aposto (estado 'apostada'),
+                            con el importe apostado (importe_real si se cambio).
     solo_apostadas=False -> 'si las hubiese hecho todas': todas las alertas
                             de apuesta con su importe recomendado.
     """
@@ -126,8 +137,9 @@ def resumen_apuestas(filas, solo_apostadas):
         sel.append(f)
     liquidadas = [f for f in sel if f.get("resultado") in ("ganada", "perdida")]
     ganadas = sum(1 for f in liquidadas if f["resultado"] == "ganada")
-    invertido = sum(num(f.get("importe")) for f in liquidadas)
-    beneficio = sum(beneficio_fila(f) for f in liquidadas)
+    importe = importe_apostado if solo_apostadas else (lambda f: num(f.get("importe")))
+    invertido = sum(importe(f) for f in liquidadas)
+    beneficio = sum(beneficio_fila(f, real=solo_apostadas) for f in liquidadas)
     return {
         "n": len(sel),
         "liquidadas": len(liquidadas),
@@ -140,9 +152,10 @@ def resumen_apuestas(filas, solo_apostadas):
     }
 
 
-def beneficio_fila(f):
-    """Beneficio de una alerta liquidada con su importe recomendado."""
-    imp = num(f.get("importe"))
+def beneficio_fila(f, real=False):
+    """Beneficio de una alerta liquidada con su importe recomendado (o, con
+    real=True, con lo que de verdad apostaste)."""
+    imp = importe_apostado(f) if real else num(f.get("importe"))
     if f.get("resultado") == "ganada":
         return imp * (num(f.get("cuota")) - 1.0)
     if f.get("resultado") == "perdida":
@@ -233,7 +246,8 @@ def por_mercado(filas, con_volatilidad=False):
     """Seguimiento de cada mercado por separado.
 
     Para cada mercado (y un TOTAL), dos bloques: 'todas' (todas las apuestas
-    con value, con su importe) y 'reales' (solo las marcadas 'apostada').
+    con value, con su importe recomendado) y 'reales' (solo las marcadas
+    'apostada', con lo que de verdad apostaste).
     con_volatilidad=True aplica la regla de volatilidad del vigia: quita las
     que esa regla habria descartado y baja el importe con volatilidad alta.
     Devuelve (lista de dicts por mercado, n de apuestas excluidas).
@@ -253,7 +267,9 @@ def por_mercado(filas, con_volatilidad=False):
             g = grupos.setdefault(clave, {"todas": vacio(), "reales": vacio()})
             _acumular(g["todas"], f, imp)
             if f.get("estado") == ESTADO_APOSTADA:
-                _acumular(g["reales"], f, imp)
+                # Sin volatilidad, lo que de verdad apostaste; con volatilidad
+                # es una simulacion de la regla y va con el importe simulado
+                _acumular(g["reales"], f, imp if con_volatilidad else importe_apostado(f))
     salida = []
     for mercado in sorted(grupos, key=lambda m: (m == "TOTAL", m)):
         g = grupos[mercado]

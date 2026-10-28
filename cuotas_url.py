@@ -245,18 +245,19 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
         if es_admin():
             st.caption(f"⚠️ No puedo leer la pestaña alertas del Sheets ({err}): no se podrá marcar.")
     gastado = gastado_del_dia(alertas, fecha)
-    marcadas, apuesta = estado_partido(alertas, fecha, j1_sel, j2_sel)
+    marcadas, _ = estado_partido(alertas, fecha, j1_sel, j2_sel)
     tope = tope_del_dia(alertas)
     queda = max(0.0, tope - gastado)
+    n_partido = sum(1 for e in marcadas.values() if e != "no apostada")
     st.markdown(f"<div class='ap-tope'><span>Hoy: {_eur(gastado)} de "
                 f"{_eur(tope)}</span><span>Quedan {_eur(queda)}</span>"
-                f"<span>Una apuesta por partido</span></div>", unsafe_allow_html=True)
+                f"<span>En este partido: {n_partido}</span></div>", unsafe_allow_html=True)
 
     if not apostables:
         st.info(f"Ninguna cuota llega al {reglas.EDGE_MIN*100:.0f} % de edge: no hay "
                 "apuesta en este partido.")
     for i, f in enumerate(apostables):
-        _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta)
+        _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, queda)
     casi = [f for f in filas if f["ev"]["verde"] and not f["ev"]["importe"]]
     if casi:
         st.caption(f"🟢 También con value, pero sin llegar al {reglas.EDGE_MIN*100:.0f} % "
@@ -270,27 +271,45 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
                    "pero con volatilidad alta el modelo acierta menos.")
 
 
-def _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta):
+def _fila_apuntada(alertas, fecha, j1_sel, j2_sel, clave):
+    """La alerta de hoy de esta seleccion en este partido, o None."""
+    import json
+    previa = None
+    for a in alertas or []:
+        try:
+            sel = json.loads(a.get("seleccion_json") or "{}")
+        except ValueError:
+            continue
+        if (a.get("fecha") == fecha and a.get("tipo_aviso") == "apuesta"
+                and json.dumps(sel, sort_keys=True) == clave
+                and {a.get("j1"), a.get("j2")} == {j1_sel, j2_sel}):
+            previa = a
+    return previa
+
+
+def _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, queda):
+    from alertas_ui import popover_importe
+    from vigia.registro import importe_apostado
     ev = f["ev"]
-    estado = marcadas.get(f["clave"])
-    importe, motivo = reglas.apuntar(alertas, fecha, j1_sel, j2_sel, ev)
-    if estado == "apostada" or estado == "pendiente":
-        importe = next((float(str(a.get("importe")).replace(",", ".")) for a in alertas
-                        if a is apuesta), ev["importe"])
+    fila = _fila_apuntada(alertas, fecha, j1_sel, j2_sel, f["clave"])
+    estado = fila.get("estado") if fila else None
+    # Recomendado: el del edge recortado al tope (con el tope agotado no hay
+    # recomendado, pero puedes apostar igual poniendo tu el importe)
+    recomendado, motivo = reglas.apuntar(alertas, fecha, j1_sel, j2_sel, ev)
+    importe = importe_apostado(fila) if estado in ("apostada", "pendiente") else recomendado
     clase = ("" if ev["verde"] else "amarillo") if estado != "no apostada" else "gris"
     etiqueta = "🟢 " if ev["verde"] else ""
     eur_txt = _eur(importe) if importe else "—"
+    rotulo = "APOSTADO" if estado in ("apostada", "pendiente") else "RECOMENDADO"
     if estado == "apostada":
         est = "<div class='ap-estado' style='color:#15803d'>✅ Apostada</div>"
     elif estado == "no apostada":
         est = "<div class='ap-estado' style='color:#64748b'>❌ No apostada</div>"
     elif estado == "pendiente":
         est = "<div class='ap-estado' style='color:#b45309'>⏳ Apuntada, sin marcar</div>"
-    elif apuesta is not None:
-        est = ("<div class='ap-estado' style='color:#64748b'>Ya hay otra apuesta en "
-               "este partido</div>")
-    elif not importe:
-        est = f"<div class='ap-estado' style='color:#64748b'>No se puede: {motivo}</div>"
+    elif not recomendado:
+        est = (f"<div class='ap-estado' style='color:#64748b'>Sin importe recomendado: "
+               f"{motivo}. Si aun así quieres, pon tú el importe.</div>")
     else:
         est = ""
     esc = html_mod.escape
@@ -299,7 +318,7 @@ def _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta):
         f"<div class='ap-sel'>{etiqueta}{esc(f['texto'])}</div>"
         f"<div class='ap-mer'>{esc(f['nombre_mercado'])}"
         f"{' · cuota de Winamax' if f['origen'] == 'winamax' else ''}</div></div>"
-        f"<div class='ap-eur'>{eur_txt}<small>APOSTAR</small></div></div>"
+        f"<div class='ap-eur'>{eur_txt}<small>{rotulo}</small></div></div>"
         f"<div class='ap-datos'>"
         f"<div><b>{_num(f['cuota'])}</b><span>Cuota</span></div>"
         f"<div><b>{f['p']*100:.1f} %</b><span>Modelo</span></div>"
@@ -309,21 +328,33 @@ def _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta):
 
     if not es_admin():
         return
-    # Que se puede hacer segun lo ya apuntado:
-    #   sin apuntar   -> apostar (si cabe en el tope y no hay otra) / no apostar
-    #   pendiente     -> apostar / no apostar
-    #   apostada      -> solo corregir a "no apostada"
-    #   no apostada   -> apostar (si cabe y no hay otra)
-    si_ok = (estado == "pendiente"
-             or (estado in (None, "no apostada") and bool(importe) and apuesta is None))
-    no_ok = estado != "no apostada"
-    b1, b2 = st.columns(2)
-    if b1.button("✅ La he apostado", key=f"ap_si_{i}", use_container_width=True,
-                 type="primary", disabled=not si_ok):
-        _guardar(f, "apostada", importe or ev["importe"], fecha, j1, j2, j1_sel, j2_sel)
-    if b2.button("❌ No la apuesto", key=f"ap_no_{i}", use_container_width=True,
-                 disabled=not no_ok):
-        _guardar(f, "no apostada", ev["importe"], fecha, j1, j2, j1_sel, j2_sel)
+    if estado == "apostada":
+        # Ya apostada: se puede cambiar el importe o corregir a "no apostada"
+        c1, c2 = st.columns(2)
+        with c1.popover("✏️ Cambiar importe", use_container_width=True):
+            popover_importe(fila, f"vb_{i}")
+        if c2.button("❌ No la aposté", key=f"ap_no_{i}", use_container_width=True):
+            _guardar(f, "no apostada", ev["importe"], None, fecha, j1, j2, j1_sel, j2_sel)
+        st.write("")
+        return
+    # Sin apostar: el importe lo eliges tu (por defecto, el recomendado)
+    base = recomendado or ev["importe"]
+    c0, c1, c2 = st.columns(3)
+    elegido = c0.number_input("Importe (€)", min_value=0.5, step=0.5, value=float(base),
+                              key=f"ap_imp_{i}",
+                              help=f"Recomendado: {_eur(base)}. Si lo cambias, solo cuenta "
+                                   "para tus apuestas (tope y beneficio real); las "
+                                   "estadísticas del modelo siguen con el recomendado.")
+    c1.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    c2.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    if c1.button(f"✅ Apostar {_eur(elegido)}", key=f"ap_si_{i}", use_container_width=True,
+                 type="primary"):
+        _guardar(f, "apostada", base, elegido, fecha, j1, j2, j1_sel, j2_sel)
+    if c2.button("❌ No la apuesto", key=f"ap_no_{i}", use_container_width=True,
+                 disabled=estado == "no apostada"):
+        _guardar(f, "no apostada", base, None, fecha, j1, j2, j1_sel, j2_sel)
+    if elegido > queda + 1e-9:
+        st.caption(f"⚠️ {_eur(elegido)} supera lo que queda del tope de hoy ({_eur(queda)}).")
     st.write("")
 
 
@@ -372,21 +403,23 @@ def _vol_num(v):
     return round(float(str(v).replace(",", ".")), 2) if nivel_volatilidad(v) else ""
 
 
-def _guardar(f, estado, importe, fecha, j1, j2, j1_sel, j2_sel):
-    """Apunta la seleccion en la pestana alertas con el estado elegido."""
+def _guardar(f, estado, importe, importe_real, fecha, j1, j2, j1_sel, j2_sel):
+    """Apunta la seleccion en la pestana alertas con el estado elegido.
+    importe = el recomendado (para las estadisticas); importe_real = lo que
+    de verdad apostaste (None = no cambiarlo; si coincide con el
+    recomendado se deja vacio)."""
     import json
     from alertas_ui import anadir_alerta, cargar_alertas, marcar_estado
     w = st.session_state.get("wm_partido") or {}
     datos = w.get("datos") or {}
     alertas, _ = cargar_alertas()
-    previa = None
-    for a in alertas or []:
-        if (a.get("fecha") == fecha and a.get("tipo_aviso") == "apuesta"
-                and json.dumps(json.loads(a.get("seleccion_json") or "{}"), sort_keys=True) == f["clave"]
-                and {a.get("j1"), a.get("j2")} == {j1_sel, j2_sel}):
-            previa = a
+    previa = _fila_apuntada(alertas, fecha, j1_sel, j2_sel, f["clave"])
+    real = None
+    if importe_real is not None:
+        rec = float(str((previa or {}).get("importe") or importe).replace(",", "."))
+        real = "" if abs(importe_real - rec) < 1e-9 else importe_real
     if previa is not None:
-        ok, error = marcar_estado(previa, estado)
+        ok, error = marcar_estado(previa, estado, real)
     else:
         ahora = datetime.now(MADRID)
         gastado = gastado_del_dia(alertas or [], fecha)
@@ -401,8 +434,9 @@ def _guardar(f, estado, importe, fecha, j1, j2, j1_sel, j2_sel):
             "cuota": f["cuota"], "p_modelo": round(f["p"], 4),
             "edge": round(f["ev"]["edge"], 4), "margen": round(f["ev"]["margen"], 4),
             "verde": "🟢" if f["ev"]["verde"] else "", "importe": importe,
+            "importe_real": real or "",
             "tope_restante": max(0.0, tope_del_dia(alertas or []) - gastado
-                                 - (importe if estado == "apostada" else 0)),
+                                 - ((real or importe) if estado == "apostada" else 0)),
             "estado": estado, "resultado": "", "beneficio": "",
             "tipo_aviso": "apuesta",
             "inicio": (datetime.fromtimestamp(datos["t"], MADRID).strftime("%Y-%m-%d %H:%M")

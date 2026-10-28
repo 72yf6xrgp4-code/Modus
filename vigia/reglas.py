@@ -208,21 +208,14 @@ def cuotas_minimas(mercado, p, edge_min=EDGE_MIN, rebaja=False):
 
 
 def apuntar(alertas, fecha, j1, j2, ev, tope=None):
-    """Importe con el que se puede apuntar una apuesta desde la app y, si
-    es 0, el motivo. Reglas: una apuesta por partido y dia (las marcadas
-    'no apostada' no cuentan), sin importe si no llega al 20 %
-    de edge, y recortada al tope que quede del dia (por defecto, el tope
-    que crece con el beneficio: registro.tope_del_dia)."""
-    from modelo.util import normalizar_nombre
+    """Importe recomendado para apuntar una apuesta desde la app y, si es 0,
+    el motivo: sin importe si no llega al 20 % de edge, y recortado al tope
+    que quede del dia (por defecto, el tope que crece con el beneficio:
+    registro.tope_del_dia). Se puede apostar mas de una vez en el mismo
+    partido y cambiar el importe a mano: lo decides tu en la app."""
     from vigia import registro
     if tope is None:
         tope = registro.tope_del_dia(alertas)
-    par = {normalizar_nombre(j1), normalizar_nombre(j2)}
-    for f in alertas:
-        if (f.get("fecha") == fecha and registro.gasta_tope(f)
-                and {normalizar_nombre(f.get("j1", "")),
-                     normalizar_nombre(f.get("j2", ""))} == par):
-            return 0.0, "ya hay una apuesta apuntada en este partido"
     if ev["importe"] <= 0:
         return 0.0, "no llega al edge exigido"
     importe = aplicar_tope(ev["importe"], registro.gastado_del_dia(alertas, fecha), tope)

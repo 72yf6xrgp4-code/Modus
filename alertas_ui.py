@@ -25,7 +25,7 @@ from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, HOJA_WINAMAX,
                             AVISO_REVISAR, ESTADO_APOSTADA,
                             ESTADO_NO_APOSTADA, ESTADO_PENDIENTE,
                             filas_a_dicts, gastado_del_dia, num,
-                            resumen_apuestas, beneficio_fila)
+                            resumen_apuestas, beneficio_fila, importe_apostado)
 from vigia.registro import (beneficio_real, por_mercado, por_mercado_y_volatilidad,
                             tope_del_dia)
 from vigia.reglas import TOPE_DIARIO
@@ -69,6 +69,7 @@ def anadir_alerta(fila):
         libro = cliente.open_by_key(SHEET_ID_PREDICCIONES)
         try:
             ws = libro.worksheet(HOJA_ALERTAS)
+            _asegurar_cabecera(ws)
         except Exception:
             ws = libro.add_worksheet(title=HOJA_ALERTAS, rows=1000,
                                      cols=len(COLUMNAS_ALERTAS))
@@ -81,17 +82,51 @@ def anadir_alerta(fila):
     return True, ""
 
 
-def marcar_estado(fila, estado):
-    """Cambia la celda 'estado' de una alerta. (ok, error)"""
+def _asegurar_cabecera(ws):
+    """Si la hoja tiene la cabecera de una version anterior (le faltan
+    columnas nuevas del final, como importe_real), la completa."""
+    cab = ws.row_values(1)
+    if cab != COLUMNAS_ALERTAS and COLUMNAS_ALERTAS[:len(cab)] == cab:
+        if ws.col_count < len(COLUMNAS_ALERTAS):
+            ws.add_cols(len(COLUMNAS_ALERTAS) - ws.col_count)
+        ws.update(range_name="A1", values=[COLUMNAS_ALERTAS])
+
+
+def actualizar_campos(fila, campos):
+    """Cambia varias celdas de una alerta en una peticion. (ok, error)"""
+    from gspread.utils import rowcol_to_a1
     ws, err = _hoja_alertas()
     if ws is None:
         return False, err
     try:
-        ws.update_cell(fila["_fila"], COLUMNAS_ALERTAS.index("estado") + 1, estado)
+        _asegurar_cabecera(ws)
+        ws.batch_update([{"range": rowcol_to_a1(fila["_fila"], COLUMNAS_ALERTAS.index(c) + 1),
+                          "values": [[v]]} for c, v in campos.items()],
+                        value_input_option="RAW")
     except Exception as e:
         return False, str(e)
     cargar_alertas.clear()
     return True, ""
+
+
+def marcar_estado(fila, estado, importe_real=None):
+    """Cambia el estado de una alerta (y, si se indica, el importe que de
+    verdad apostaste). (ok, error)"""
+    campos = {"estado": estado}
+    if importe_real is not None:
+        campos["importe_real"] = importe_real
+    return actualizar_campos(fila, campos)
+
+
+def cambiar_importe(fila, importe):
+    """Importe que de verdad apostaste. Solo cuenta para tus apuestas (tope,
+    beneficio real); las estadisticas del modelo siguen con el recomendado.
+    Si coincide con el recomendado, se deja vacio. (ok, error)"""
+    real = "" if abs(importe - num(fila.get("importe"))) < 1e-9 else importe
+    campos = {"importe_real": real}
+    if fila.get("resultado") in ("ganada", "perdida"):
+        campos["beneficio"] = round(beneficio_fila(dict(fila, importe_real=real), real=True), 2)
+    return actualizar_campos(fila, campos)
 
 
 def _pestana(nombre, columnas):
@@ -168,7 +203,7 @@ def eliminar_alerta(fila):
 
 def _botones(f, clave, marcar=True):
     """Apostada / No apostada / Eliminar debajo de una tarjeta."""
-    b1, b2, b3, _ = st.columns([1, 1, 1, 2])
+    b1, b2, b3, b4, _ = st.columns([1, 1, 1, 1, 1])
     if marcar and f.get("tipo_aviso") == AVISO_APUESTA:
         if b1.button("✅ Apostada", key=f"al_si_{clave}",
                      disabled=f.get("estado") == ESTADO_APOSTADA):
@@ -176,6 +211,9 @@ def _botones(f, clave, marcar=True):
         if b2.button("❌ No apostada", key=f"al_no_{clave}",
                      disabled=f.get("estado") == ESTADO_NO_APOSTADA):
             _marcar(f, ESTADO_NO_APOSTADA)
+    if f.get("tipo_aviso") == AVISO_APUESTA and f.get("estado") != ESTADO_NO_APOSTADA:
+        with b4.popover("✏️ Importe"):
+            popover_importe(f, clave)
     with b3.popover("🗑️ Eliminar"):
         st.markdown(f"¿Eliminar **{html_mod.escape(str(f.get('seleccion', '')))}** "
                     f"({html_mod.escape(str(f.get('partido', '')))}, {f.get('fecha', '')})? "
@@ -185,6 +223,22 @@ def _botones(f, clave, marcar=True):
             if ok:
                 st.rerun()
             st.error(f"No se pudo eliminar: {error}")
+
+
+def popover_importe(f, clave):
+    """Contenido del desplegable para cambiar lo que de verdad apostaste."""
+    rec = num(f.get("importe"))
+    st.markdown(f"Recomendado: **{_eur(rec)}**. El importe que pongas solo cuenta para "
+                "tus apuestas (tope y beneficio real); las estadísticas del modelo "
+                "siguen con el recomendado.")
+    nuevo = st.number_input("Importe apostado (€)", min_value=0.5, step=0.5,
+                            value=float(importe_apostado(f) or rec or 5.0),
+                            key=f"al_imp_{clave}")
+    if st.button("Guardar importe", key=f"al_imp_ok_{clave}", type="primary"):
+        ok, error = cambiar_importe(f, nuevo)
+        if ok:
+            st.rerun()
+        st.error(f"No se pudo guardar: {error}")
 
 
 def _marcar(fila, estado):
@@ -218,7 +272,9 @@ def _tarjeta(f):
              "revisar": "#f59e0b"}.get(estado, "#2563eb")
     res = f.get("resultado") or ""
     res_txt = {"ganada": "✅ ganada", "perdida": "❌ perdida"}.get(res, "")
-    importe = "" if revisar else f" · <b>{_eur(num(f.get('importe')))}</b>"
+    importe = "" if revisar else f" · <b>{_eur(importe_apostado(f))}</b>"
+    if not revisar and str(f.get("importe_real") or "").strip():
+        importe += f" <span style='color:#64748b'>(recomendado {_eur(num(f.get('importe')))})</span>"
     cuota = f"{num(f.get('cuota')):.2f}".replace(".", ",")
     e = lambda x: html_mod.escape(str(x or ""))  # noqa: E731
     st.markdown(
@@ -235,7 +291,7 @@ def _tarjeta(f):
 
 
 def render_alertas():
-    st.caption("Apuestas marcadas en Value Bets («La he apostado» / «No la apuesto»). "
+    st.caption("Apuestas marcadas en Value Bets («Apostar» / «No la apuesto»). "
                "Se actualiza al pulsar **Actualizar** (o solo, cada minuto como mucho).")
     if not es_admin():
         st.info("🔒 Las apuestas solo se ven en modo administrador.")
@@ -295,9 +351,10 @@ def render_alertas():
 
 def _tabla(filas):
     cols = ["fecha", "hora", "partido", "mercado", "seleccion", "cuota",
-            "p_modelo", "edge", "verde", "importe", "estado", "resultado",
-            "beneficio"]
+            "p_modelo", "edge", "verde", "importe", "importe_real", "estado",
+            "resultado", "beneficio"]
     df = pd.DataFrame([{c: f.get(c, "") for c in cols} for f in filas])
+    df = df.rename(columns={"importe": "recomendado", "importe_real": "apostado"})
     return df.iloc[::-1]
 
 
@@ -330,7 +387,7 @@ def _evolucion(filas):
         "fecha": f.get("fecha"), "hora": f.get("hora", ""),
         "mercado": f.get("mercado", ""),
         "todas": beneficio_fila(f),
-        "real": beneficio_fila(f) if f.get("estado") == ESTADO_APOSTADA else 0.0,
+        "real": beneficio_fila(f, real=True) if f.get("estado") == ESTADO_APOSTADA else 0.0,
         "importe": num(f.get("importe")),
         "ganada": f.get("resultado") == "ganada",
     } for f in liquidadas]).sort_values(["fecha", "hora"])
@@ -367,7 +424,8 @@ def _por_mercado(filas):
     with sin_vol:
         st.caption("Cada mercado por separado, sin tener en cuenta la volatilidad. "
                    "«Apuestas» son todas las que tuvieron value (las hicieras o no), con "
-                   "su importe; «real» solo las que marcaste como apostadas.")
+                   "su importe recomendado; «real» solo las que marcaste como apostadas, "
+                   "con lo que de verdad apostaste.")
         grupos, _ = por_mercado(filas)
         st.dataframe(_tabla_mercados(grupos), use_container_width=True, hide_index=True)
     with con_vol:
