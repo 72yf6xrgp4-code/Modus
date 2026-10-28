@@ -70,3 +70,31 @@ def resumen_aviso(filas, j1, j2):
     return [f"Gana {ape} ≥{_num(ganador['aviso'])}",
             f"{ape} −1,5 ≥{_num(hcap['aviso'])}",
             f"{lado} 5,5 legs ≥{_num(legs['aviso'])}"]
+
+
+def evaluar_cuotas(calc, cuotas_sel, j1, j2):
+    """Evalua con tus reglas una lista de cuotas [(sel, cuota, origen)].
+
+    Para APUNTAR la volatilidad no cuenta (10 % de edge e importe normal).
+    Si la misma seleccion llega dos veces (casilla y boton), manda la
+    primera. Devuelve filas ordenadas por edge con sel, texto,
+    nombre_mercado, cuota, p, justa, ev (de reglas.evaluar) y origen.
+    """
+    import json
+    vistas, filas = set(), []
+    for sel, cuota, origen in cuotas_sel:
+        k = json.dumps(sel, sort_keys=True)
+        if k in vistas or not cuota or cuota <= 1:
+            continue
+        vistas.add(k)
+        p = probabilidad(calc, sel)
+        if p is None:
+            continue
+        mercado = reglas.MERCADO_DE_TIPO[sel["tipo"]]
+        filas.append({"sel": sel, "clave": k, "texto": texto_seleccion(sel, j1, j2),
+                      "nombre_mercado": NOMBRE_MERCADO[sel["tipo"]],
+                      "cuota": float(cuota), "p": p, "justa": 1.0 / p,
+                      "ev": reglas.evaluar(mercado, p, float(cuota)),
+                      "origen": origen})
+    filas.sort(key=lambda f: f["ev"]["edge"], reverse=True)
+    return filas

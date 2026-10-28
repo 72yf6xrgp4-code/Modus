@@ -2070,61 +2070,12 @@ def render_value_bets():
                 st.markdown(_burbuja(m_der[0], m_der[1], p, "#ff7f0e"),
                             unsafe_allow_html=True)
 
-    if value_bets_list:
-        st.markdown("---")
-        st.markdown("### 💎 Resumen de Value Bets Encontradas")
-        value_bets_list.sort(key=lambda x: x["Yield"], reverse=True)
-        for vb in value_bets_list:
-            yield_pct = vb["Yield"] * 100
-            st.markdown(f"""
-            <div style="
-                border-left: 4px solid #28a745;
-                padding: 15px;
-                margin: 10px 0;
-                background: linear-gradient(90deg, rgba(40,167,69,0.1) 0%, rgba(40,167,69,0.02) 100%);
-                border-radius: 5px;
-            ">
-                <div style="display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;">
-                    <div style="flex: 1 1 100%; min-width: 0;">
-                        <p style="margin: 0; font-size: 1.1em; font-weight: bold; color: #333;">{vb["Mercado"]}</p>
-                    </div>
-                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
-                        <p style="margin: 0; font-size: 0.8em; color: #666;">Probabilidad</p>
-                        <p style="margin: 0; font-size: 1.1em; font-weight: bold; color: #1f77b4;">{vb["Probabilidad"]*100:.1f}%</p>
-                    </div>
-                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
-                        <p style="margin: 0; font-size: 0.8em; color: #666;">Cuota Justa</p>
-                        <p style="margin: 0; font-size: 1.1em; font-weight: bold;">{vb["Cuota Justa"]:.2f}</p>
-                    </div>
-                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
-                        <p style="margin: 0; font-size: 0.8em; color: #666;">Cuota Bookie</p>
-                        <p style="margin: 0; font-size: 1.1em; font-weight: bold; color: #ff7f0e;">{vb["Cuota Bookie"]:.2f}</p>
-                    </div>
-                    <div style="text-align: center; flex: 1 1 70px; white-space: nowrap;">
-                        <p style="margin: 0; font-size: 0.8em; color: #666;">Yield</p>
-                        <p style="margin: 0; font-size: 1.3em; font-weight: bold; color: #28a745;">+{yield_pct:.1f}%</p>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        st.success(f"✅ Se encontraron **{len(value_bets_list)}** mercados con value positivo")
-    else:
-        claves_cuota = ("vic_", "180_", "mas_", "hcap_", "legs_")
-        hay_cuotas = any(
-            isinstance(v, (int, float)) and not isinstance(v, bool)
-            for k, v in st.session_state.items()
-            if isinstance(k, str) and k.startswith(claves_cuota))
-        if hay_cuotas:
-            st.info("ℹ️ Ninguna de las cuotas introducidas tiene value "
-                    "(🟢). Prueba con otros mercados de las pestañas.")
-        else:
-            st.info("✍️ Escribe la cuota de tu casa de apuestas en cualquier "
-                    "mercado de las pestañas de arriba y aquí verás si tiene "
-                    "value.")
-
-    # Cuotas recibidas del boton "Modus value" (todas, con su importe)
-    from cuotas_url import render_panel_winamax
+    # Datos de las cuotas recibidas del boton "Modus value" y, debajo, las
+    # apuestas con valor: cuanto apostar segun tus reglas y botones para
+    # marcar si la haces (sustituye al antiguo "Resumen de Value Bets")
+    from cuotas_url import render_apuestas_valor, render_panel_winamax
     render_panel_winamax(j1, j2, j1_sel, j2_sel)
+    render_apuestas_valor(j1, j2, j1_sel, j2_sel)
 
 def render_heatmap_estadisticas(stats_dict, titulo="📊 Comparativa de Estadísticas"):
     """Renderiza un heatmap (tabla coloreada) con las 5 métricas clave por jugador.

@@ -78,17 +78,24 @@ def anadir_alerta(fila):
     return True, ""
 
 
-def _marcar(fila, estado):
+def marcar_estado(fila, estado):
+    """Cambia la celda 'estado' de una alerta. (ok, error)"""
     ws, err = _hoja_alertas()
     if ws is None:
-        st.error(err)
-        return
+        return False, err
     try:
         ws.update_cell(fila["_fila"], COLUMNAS_ALERTAS.index("estado") + 1, estado)
     except Exception as e:
-        st.error(f"No se pudo guardar: {e}")
-        return
+        return False, str(e)
     cargar_alertas.clear()
+    return True, ""
+
+
+def _marcar(fila, estado):
+    ok, error = marcar_estado(fila, estado)
+    if not ok:
+        st.error(f"No se pudo guardar: {error}")
+        return
     st.rerun()
 
 

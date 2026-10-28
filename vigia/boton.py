@@ -131,3 +131,13 @@ def casilla(sel):
     if t == "mas_180":
         return {1: "mas_j1", 0: "mas_emp", 2: "mas_j2"}[sel["quien"]]
     return None
+
+
+def seleccion_de_casilla(key):
+    """Inversa de casilla(): la seleccion del modelo de una casilla de cuota
+    de Value Bets ('vic_j1', 'hcap_j2_neg_15'...), o None."""
+    from vigia.cuotas import selecciones
+    for sel in selecciones():
+        if casilla(sel) == key:
+            return sel
+    return None

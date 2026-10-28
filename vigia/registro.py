@@ -119,3 +119,21 @@ def beneficio_fila(f):
     if f.get("resultado") == "perdida":
         return -imp
     return 0.0
+
+
+def estado_partido(filas, fecha, j1, j2):
+    """Lo apuntado hoy para un partido: {clave_seleccion: estado} y la
+    apuesta que cuenta (apostada o pendiente) si la hay, o None."""
+    from modelo.util import normalizar_nombre
+    par = {normalizar_nombre(j1), normalizar_nombre(j2)}
+    marcadas, apuesta = {}, None
+    for f in filas:
+        if f.get("fecha") != fecha or f.get("tipo_aviso") != AVISO_APUESTA:
+            continue
+        if {normalizar_nombre(f.get("j1", "")), normalizar_nombre(f.get("j2", ""))} != par:
+            continue
+        clave = json.dumps(seleccion(f), sort_keys=True)
+        marcadas[clave] = f.get("estado", "")
+        if gasta_tope(f):
+            apuesta = f
+    return marcadas, apuesta
