@@ -188,3 +188,30 @@ def test_estado_de_los_partidos_por_la_api_y_csv_si_falla(monkeypatch):
     datos.refrescar(jueves, forzar=True)
     assert datos.fuente.startswith("CSV")
     assert len(datos.calendario["Grupo C Jueves"]) == 2
+
+
+def test_dos_vigias_a_la_vez_no_repiten_aviso():
+    """El del portatil y el de GitHub comparten vigia_log: si uno ya avisó
+    (despues de que el otro arrancara), el otro no vuelve a avisar."""
+    cal = _cal(("Andy Baetens", "Cameron Menzies"))
+    t = datetime(2026, 11, 5, 13, 40, tzinfo=M)
+    portatil, hoja, notif1, reloj1 = montar(cal, t)
+    portatil.ciclo()                                   # arranca: aun no toca
+    github = Vigia(hoja, Notif(), portatil.datos, AJ, reloj=Reloj(t + timedelta(minutes=12)))
+    github.ciclo()                                     # GitHub avisa primero
+    assert len(github.notif.enviados) == 1
+    reloj1.t = t + timedelta(minutes=13)
+    portatil.ciclo()
+    assert notif1.enviados == []
+
+
+def test_descarte_se_anota_una_sola_vez_aunque_se_relance():
+    cal = _cal(("Callan Rydz", "Andy Baetens"))         # volatilidad 19: descarte
+    t = datetime(2026, 11, 5, 13, 52, tzinfo=M)
+    v, hoja, _, _ = montar(cal, t)
+    v.ciclo()
+    v._descartados.clear()                             # recarga de datos
+    v.ciclo()
+    otro = Vigia(hoja, Notif(), v.datos, AJ, reloj=Reloj(t))   # --una-vez de GitHub
+    otro.ciclo()
+    assert sum(1 for d in hoja.logs if d["tipo"] == "descartado") == 1

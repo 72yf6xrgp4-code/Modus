@@ -113,6 +113,7 @@ class Vigia:
         self._dia = None
         self._avisados = set()
         self._descartados = {}
+        self._anotados = {}   # partido -> ultimo motivo de descarte en vigia_log
 
     @staticmethod
     def _partido(jornada, p):
@@ -131,12 +132,28 @@ class Vigia:
         ya avisados hoy para no repetir avisos si el vigia se reinicia."""
         self._dia = fecha
         self._descartados = {}
-        self._avisados = {d.get("partido", "") for d in self.hoja.log_del_dia(fecha)
-                          if d.get("tipo") == "aviso"}
+        del_dia = self.hoja.log_del_dia(fecha)
+        self._avisados = {d.get("partido", "") for d in del_dia if d.get("tipo") == "aviso"}
+        self._anotados = {d.get("partido", ""): d.get("detalle", "") for d in del_dia
+                          if d.get("tipo") == "descartado"}
+
+    def _ya_avisado(self, clave, fecha):
+        """Otro vigia (el del portatil o el de GitHub) puede haber avisado de
+        este partido despues de que este arrancara: se mira vigia_log justo
+        antes de mandar el aviso."""
+        if clave in self._avisados:
+            return True
+        if any(d.get("tipo") == "aviso" and d.get("partido") == clave
+               for d in self.hoja.log_del_dia(fecha)):
+            self._avisados.add(clave)
+            return True
+        return False
 
     def _descartar(self, clave, partido, motivo):
-        if self._descartados.get(clave) != motivo:
-            self._descartados[clave] = motivo
+        self._descartados[clave] = motivo
+        # Se anota una vez por motivo (aunque se reevalue o se relance el vigia)
+        if self._anotados.get(clave) != motivo:
+            self._anotados[clave] = motivo
             log.info("Descartado %s: %s", partido, motivo)
             self._log("descartado", partido, motivo)
 
@@ -193,6 +210,8 @@ class Vigia:
         if d1.get("PR", 0) <= 0 or d2.get("PR", 0) <= 0:
             return self._descartar(clave, partido, "sin Puntuacion Global")
 
+        if self._ya_avisado(clave, fecha):
+            return
         calc = calcular_partido(d1, d2, j1_saca_primero=True)
         filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"])
         ahora = self.reloj()
@@ -220,6 +239,7 @@ class Vigia:
         self.notif.enviar(texto, enlace=enlace_app(self.aj.app_url, n1, n2))
         self._avisados.add(clave)
         self._log("aviso", partido, texto)
+        self.hoja.volcar_log()   # cuanto antes, para que el otro vigia lo vea
         log.info("AVISO %s", texto)
 
     # ── resultados de las apuestas apuntadas en la app ───────────────────

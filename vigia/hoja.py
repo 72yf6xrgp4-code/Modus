@@ -24,8 +24,11 @@ class HojaGoogle:
         from google.oauth2.service_account import Credentials
         scopes = ["https://www.googleapis.com/auth/spreadsheets",
                   "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_file(ruta_credenciales,
-                                                      scopes=scopes)
+        # Ruta al JSON (portatil) o el JSON ya leido (GitHub Actions)
+        if isinstance(ruta_credenciales, dict):
+            creds = Credentials.from_service_account_info(ruta_credenciales, scopes=scopes)
+        else:
+            creds = Credentials.from_service_account_file(ruta_credenciales, scopes=scopes)
         self.cliente = gspread.authorize(creds)
         self.libro = self.cliente.open_by_key(sheet_id)
         self._sheet_id_datos = sheet_id_datos or sheet_id

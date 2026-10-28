@@ -117,6 +117,59 @@ def preparar_value_bets(nombres_disponibles):
         st.success(f"🎯 Partido del aviso: **{j1}** vs **{j2}**")
 
 
+def comprobar_partido_anterior(j1_sel, j2_sel):
+    """(jornada, lista de vigia.frescura.partido_anterior) del partido, o
+    (None, None) si no hay jornada en juego o no se puede leer la hoja."""
+    from data_loading import (_descargar_csv_jornada, cargar_jugadores_desde,
+                              detectar_jornada_de_hoy)
+    from modelo.datos import partidos_de_jornada
+    from vigia.frescura import partido_anterior
+    jornada = detectar_jornada_de_hoy(exigir_datos=False)
+    if not jornada:
+        return None, None
+    lineas = _descargar_csv_jornada(jornada)
+    if not lineas:
+        return jornada, None
+    stats_hoy = cargar_jugadores_desde(jornada) or {}
+    return jornada, partido_anterior(partidos_de_jornada(lineas), j1_sel, j2_sel, stats_hoy)
+
+
+def _aviso_partido_anterior(j1_sel, j2_sel, completo):
+    """Avisa si los datos aun no tienen el partido anterior de alguno de
+    los dos jugadores (completo=False: solo una linea si falta algo)."""
+    jornada, res = comprobar_partido_anterior(j1_sel, j2_sel)
+    if jornada is None:
+        if completo:
+            st.caption("ℹ️ No hay jornada en juego: los datos son los del Resumen Semanal.")
+        return
+    if res is None:
+        st.warning(f"⚠️ No he podido leer la hoja de {jornada} para comprobar que los "
+                   "datos incluyen el partido anterior de cada jugador.")
+        return
+    malos = [r for r in res if not r["ok"]]
+    fuente = st.session_state.get("vb_fuente", "Forma reciente")
+    if malos:
+        if not completo:
+            st.warning("⚠️ Ojo: los datos aún no incluyen el partido anterior de "
+                       + " ni de ".join(r["jugador"] for r in malos)
+                       + " (detalle arriba, en «Cuotas de Winamax»).")
+            return
+        st.error("⚠️ **Faltan datos del partido anterior.** "
+                 + " ".join(f"**{r['jugador']}**: {r['texto']}." for r in malos)
+                 + " El modelo aún no lo tiene en cuenta: pulsa «Ejecutar actualización» "
+                   "en la barra lateral, espera un poco y pulsa «Refrescar datos» antes "
+                   "de apostar.")
+        for r in res:
+            if r["ok"]:
+                st.caption(f"✅ {r['jugador']}: {r['texto']}.")
+    elif completo:
+        st.caption("✅ Datos al día — " + " · ".join(
+            f"{r['jugador']}: {r['texto']}" for r in res) + ".")
+    if completo and fuente not in ("Forma reciente", jornada) and any(r["jugados"] for r in res):
+        st.caption(f"ℹ️ Estás usando la fuente «{fuente}», que no incluye los partidos "
+                   f"de hoy; la recomendada es ⚡ Forma reciente.")
+
+
 def _num(v):
     return f"{v:.2f}".replace(".", ",")
 
@@ -144,6 +197,7 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
     if w["orden"] != "cartel":
         st.warning("⚠️ El partido no está en el calendario de la hoja: J1 es el "
                    "primero de Winamax.")
+    _aviso_partido_anterior(j1_sel, j2_sel, completo=True)
 
     calc = calcular_partido(j1, j2, j1_saca_primero=True)
     filas = evaluar_cuotas(calc, [(s["sel"], s["cuota"], "winamax") for s in w["selecciones"]],
@@ -249,6 +303,9 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     tope = tope_del_dia(alertas)
     queda = max(0.0, tope - gastado)
     n_partido = sum(1 for e in marcadas.values() if e != "no apostada")
+    w = st.session_state.get("wm_partido")
+    if w and (w["j1"], w["j2"]) == (j1_sel, j2_sel):
+        _aviso_partido_anterior(j1_sel, j2_sel, completo=False)
     st.markdown(f"<div class='ap-tope'><span>Hoy: {_eur(gastado)} de "
                 f"{_eur(tope)}</span><span>Quedan {_eur(queda)}</span>"
                 f"<span>En este partido: {n_partido}</span></div>", unsafe_allow_html=True)
