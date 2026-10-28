@@ -6,8 +6,8 @@ vigia/cli.py - Linea de comandos:
                                      20:10-03:00) y sale al terminar
     python -m vigia --hasta 23:00    otra hora de fin
     python -m vigia --simular        sin notificaciones ni escrituras
-    python -m vigia --ver            tabla de hoy (horas estimadas y cuotas
-                                     minimas principales) y sale
+    python -m vigia --ver            partidos de hoy, cuando se avisara de
+                                     cada uno y sus cuotas minimas, y sale
     python -m vigia --liquidar       solo apunta resultados pendientes
     python -m vigia --probar-aviso   manda un aviso de prueba al movil
 """
@@ -51,12 +51,13 @@ def _argumentos(argv):
                     help="hora de fin HH:MM (Madrid). Por defecto, el final de "
                          "la ventana de hoy")
     ap.add_argument("--intervalo", type=int, default=60,
-                    help="segundos entre vueltas (minimo 30)")
+                    help="segundos entre lecturas del estado de los partidos "
+                         "(minimo 30; recomendado 60-90)")
     ap.add_argument("--simular", action="store_true",
                     help="sin notificaciones ni escrituras en la hoja")
     ap.add_argument("--ver", action="store_true",
-                    help="muestra los partidos de hoy con su hora estimada y "
-                         "cuotas minimas, y sale")
+                    help="muestra los partidos de hoy, cuando se avisara de cada "
+                         "uno y sus cuotas minimas, y sale")
     ap.add_argument("--liquidar", action="store_true",
                     help="solo apunta los resultados pendientes y sale")
     ap.add_argument("--notificador", default=None,
@@ -74,47 +75,59 @@ def _hoja(aj, simular):
             log.warning("Sin GOOGLE_CREDENCIALES: hoja en memoria")
             return HojaMemoria()
         raise SystemExit("Falta GOOGLE_CREDENCIALES en .env")
-    hoja = HojaGoogle(aj.credenciales_google, aj.sheet_id)
+    hoja = HojaGoogle(aj.credenciales_google, aj.sheet_id, aj.sheet_id_datos)
     return HojaSoloLectura(hoja) if simular else hoja
 
 
 def _ver(aj):
-    """Tabla de hoy sin avisar ni escribir."""
+    """Estado de los partidos de hoy y cuando se avisara de cada uno, sin
+    avisar ni escribir."""
     from vigia import cuotas, reglas
-    from vigia.horario import dia_jornada, estimar_inicios, inicio_jornada
+    from vigia.horario import dia_jornada, inicio_jornada, toca_avisar
     from vigia.nombres import emparejar
     from vigia.nucleo import DatosSheet, ahora_madrid
     from modelo.motor import calcular_partido
 
     ahora = ahora_madrid()
-    datos = DatosSheet()
+    try:
+        lector = _hoja(aj, simular=True).leer_jornada
+    except Exception as e:
+        print(f"(sin acceso a la API de Google: {e}; uso el CSV publicado)")
+        lector = None
+    datos = DatosSheet(lector=lector)
     datos.refrescar(ahora, forzar=True)
     db = {v["nombre_original"]: v for v in datos.jugadores.values()}
     print(f"Datos: Forma reciente (jornada con datos: {datos.jornada_hoy or 'ninguna'}, "
-          f"{len(db)} jugadores)")
+          f"{len(db)} jugadores) · estado de los partidos: {datos.fuente}")
     if not datos.calendario:
         print("Hoy no hay jornada de Modus.")
     for jornada, lista in datos.calendario.items():
         inicio = inicio_jornada(jornada, dia_jornada(ahora))
-        est = estimar_inicios(lista, inicio, ahora, {}, aj.duracion_partido_min)
-        print(f"\n## {jornada}")
-        for p in lista:
-            hora = est[p["orden"]].strftime("%H:%M") if p["orden"] in est else p["estado"]
+        print(f"\n## {jornada} (empieza a las {inicio:%H:%M})")
+        for idx, p in enumerate(lista):
+            avisar, hora = toca_avisar(lista, idx, inicio, ahora, aj.aviso_min_antes)
+            if p["estado"] != "pendiente":
+                cuando = p["estado"].replace("_", " ")
+            elif avisar:
+                cuando = "AVISO YA"
+            elif hora:
+                cuando = f"aviso {aj.aviso_min_antes} min antes de las {hora:%H:%M}"
+            else:
+                cuando = "aviso al terminar el anterior"
+            linea = f"{p['orden'] + 1:>2}. [{cuando}] {p['j1']} vs {p['j2']}"
             n1, n2 = emparejar(p["j1"], list(db)), emparejar(p["j2"], list(db))
-            linea = f"{p['orden'] + 1:>2}. ~{hora:<9} {p['j1']} vs {p['j2']}"
-            if n1 and n2 and n1 != n2:
+            if p["estado"] == "pendiente" and n1 and n2 and n1 != n2:
                 d1, d2 = db[n1], db[n2]
                 req = reglas.requisito_volatilidad(d1.get("volatilidad"), d2.get("volatilidad"))
                 if req["ok"]:
                     calc = calcular_partido(d1, d2, True)
                     filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"])
-                    linea += (f"  P(J1) {calc['p1']*100:.1f} % · "
-                              + " · ".join(cuotas.resumen_aviso(filas, n1, n2)))
+                    linea += ("\n      " + " · ".join(cuotas.resumen_aviso(filas, n1, n2)))
                     if req["rebaja"]:
                         linea += f"  [vol {req['vol']:.1f}: edge >= {req['edge_min']*100:.0f} %]"
                 else:
                     linea += f"  [descartado: {req['motivo']}]"
-            else:
+            elif p["estado"] == "pendiente":
                 linea += "  [no esta en los datos]"
             print(linea)
     return 0
@@ -140,7 +153,9 @@ def main(argv=None):
         return _ver(aj)
 
     if args.liquidar:
-        v = Vigia(_hoja(aj, args.simular), notif_mod.Consola(), DatosSheet(), aj)
+        hoja = _hoja(aj, args.simular)
+        v = Vigia(hoja, notif_mod.Consola(),
+                  DatosSheet(lector=getattr(hoja, "leer_jornada", None)), aj)
         n = v.liquidar()
         v.hoja.volcar_log()
         print(f"Resultados apuntados: {n}")
@@ -170,8 +185,11 @@ def main(argv=None):
 
     notif = (notif_mod.Consola() if args.simular
              else notif_mod.crear(args.notificador or aj.notificador, aj))
-    vigia = Vigia(_hoja(aj, args.simular), notif,
-                  DatosSheet(aj.recarga_datos_seg), aj)
+    hoja = _hoja(aj, args.simular)
+    # Estado de los partidos por la API de Google (al momento), no por el CSV
+    vigia = Vigia(hoja, notif,
+                  DatosSheet(aj.recarga_datos_seg, lector=getattr(hoja, "leer_jornada", None)),
+                  aj)
     intervalo = max(30, args.intervalo)
     vigia._log("inicio", "", f"hasta {fin.strftime('%H:%M')}"
                f"{' (simulacion)' if args.simular else ''}")

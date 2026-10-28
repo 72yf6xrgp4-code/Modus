@@ -8,16 +8,15 @@ fuente de datos, reloj) para poder probarlo sin red.
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from modelo import datos as md
 from modelo.motor import calcular_partido
-from modelo.util import normalizar_nombre
 from modelo.volatilidad import nivel_volatilidad
 from vigia import cuotas, reglas, registro
-from vigia.horario import dia_jornada, estimar_inicios, fecha_jornada, inicio_jornada
+from vigia.horario import dia_jornada, fecha_jornada, inicio_jornada, toca_avisar
 from vigia.nombres import emparejar, mismo_jugador
 
 log = logging.getLogger(__name__)
@@ -43,18 +42,42 @@ def enlace_app(app_url, j1, j2):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class DatosSheet:
-    """Jugadores ('Forma reciente') y calendario del dia de jornada,
-    recargados cada `recarga_seg` segundos."""
+    """Jugadores ('Forma reciente', recargados cada `recarga_seg` segundos)
+    y estado de los partidos del dia de jornada (en cada vuelta).
 
-    def __init__(self, recarga_seg=300):
+    lector: funcion jornada -> filas que lee la pestana por la API de Google
+    (HojaGoogle.leer_jornada). El CSV publicado va con varios minutos de
+    retraso; sin lector, o si la API falla, se usa el CSV."""
+
+    def __init__(self, recarga_seg=300, lector=None):
         self.recarga_seg = recarga_seg
+        self.lector = lector
+        self.fuente = "API" if lector else "CSV"
         self._t = 0.0
         self.jugadores = {}
         self.calendario = {}   # jornada -> partidos_de_jornada
         self.jornada_hoy = None
 
+    def lineas(self, jornada):
+        if self.lector:
+            try:
+                filas = self.lector(jornada)
+                self.fuente = "API"
+                return filas
+            except Exception as e:
+                if self.fuente != "CSV (la API fallo)":
+                    log.warning("La API de Google no lee %s (%s): uso el CSV publicado",
+                                jornada, e)
+                self.fuente = "CSV (la API fallo)"
+        return md.descargar_lineas(jornada)
+
     def refrescar(self, ahora, forzar=False):
+        """Estado de los partidos en cada llamada; jugadores cada
+        recarga_seg. Devuelve True si se han recargado los jugadores."""
+        dia = dia_jornada(ahora)
         if not forzar and time.time() - self._t < self.recarga_seg:
+            self.calendario = {j: md.partidos_de_jornada(self.lineas(j))
+                               for j in md.jornadas_del_dia(dia)}
             return False
         # Igual que data_loading.cargar_forma_reciente: la jornada que toca
         # por hora, solo si ya tiene datos.
@@ -70,8 +93,8 @@ class DatosSheet:
             jugadores = md.combinar_forma_reciente(resumen, hoy)
         if jugadores:
             self.jugadores = jugadores
-        self.calendario = {j: md.partidos_de_jornada(md.descargar_lineas(j))
-                           for j in md.jornadas_del_dia(dia_jornada(ahora))}
+        self.calendario = {j: md.partidos_de_jornada(self.lineas(j))
+                           for j in md.jornadas_del_dia(dia)}
         self._t = time.time()
         return True
 
@@ -90,10 +113,12 @@ class Vigia:
         self._dia = None
         self._avisados = set()
         self._descartados = {}
-        self._en_juego = {}      # (jornada, orden) -> primera vez visto en juego
 
-    def _clave(self, a, b):
-        return f"{normalizar_nombre(a)}|{normalizar_nombre(b)}"
+    @staticmethod
+    def _partido(jornada, p):
+        """Nombre del partido en vigia_log: 'J1 vs J2 (Grupo C Jueves, 3)'.
+        Jornada y posicion lo identifican aunque la pareja se repita."""
+        return f"{p['j1']} vs {p['j2']} ({jornada}, {p['orden'] + 1})"
 
     def _log(self, tipo, partido="", detalle=""):
         ahora = self.reloj()
@@ -106,10 +131,8 @@ class Vigia:
         ya avisados hoy para no repetir avisos si el vigia se reinicia."""
         self._dia = fecha
         self._descartados = {}
-        self._en_juego = {}
-        self._avisados = {self._clave(*d["partido"].split(" vs ", 1))
-                          for d in self.hoja.log_del_dia(fecha)
-                          if d.get("tipo") == "aviso" and " vs " in d.get("partido", "")}
+        self._avisados = {d.get("partido", "") for d in self.hoja.log_del_dia(fecha)
+                          if d.get("tipo") == "aviso"}
 
     def _descartar(self, clave, partido, motivo):
         if self._descartados.get(clave) != motivo:
@@ -134,34 +157,27 @@ class Vigia:
         dia = dia_jornada(ahora)
         pendientes = 0
         for jornada, lista in self.datos.calendario.items():
-            for p in lista:
-                if p["estado"] == "en_juego":
-                    self._en_juego.setdefault((jornada, p["orden"]), ahora)
             inicio = inicio_jornada(jornada, dia) or ahora
-            inicio = inicio.replace(tzinfo=ahora.tzinfo) if inicio.tzinfo is None else inicio
-            vistos = {o: t for (j, o), t in self._en_juego.items() if j == jornada}
-            estimados = estimar_inicios(lista, inicio, ahora, vistos,
-                                        self.aj.duracion_partido_min)
-            for p in lista:
+            for idx, p in enumerate(lista):
                 if p["estado"] != "pendiente":
                     continue
                 pendientes += 1
-                est = estimados.get(p["orden"])
-                if est is None:
-                    continue
-                if est - ahora > timedelta(minutes=self.aj.aviso_min_antes):
+                avisar, hora = toca_avisar(lista, idx, inicio, ahora,
+                                           self.aj.aviso_min_antes)
+                if not avisar:
                     continue
                 try:
-                    self.evaluar(jornada, p, est, fecha)
+                    self.evaluar(jornada, p, hora, fecha)
                 except Exception as e:  # un partido no tumba el ciclo
                     log.exception("Error con %s vs %s", p["j1"], p["j2"])
                     self._log("error", f"{p['j1']} vs {p['j2']}", repr(e)[:300])
         self.hoja.volcar_log()
         return pendientes
 
-    def evaluar(self, jornada, p, est, fecha):
-        clave = self._clave(p["j1"], p["j2"])
-        partido = f"{p['j1']} vs {p['j2']}"
+    def evaluar(self, jornada, p, hora_inicio, fecha):
+        """Avisa del partido (una sola vez) con sus cuotas minimas.
+        hora_inicio: hora conocida del partido, o None si es "el siguiente"."""
+        partido = clave = self._partido(jornada, p)
         if clave in self._avisados or clave in self._descartados:
             return
         db = {v["nombre_original"]: v for v in self.datos.jugadores.values()}
@@ -180,7 +196,7 @@ class Vigia:
         calc = calcular_partido(d1, d2, j1_saca_primero=True)
         filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"])
         ahora = self.reloj()
-        hora = est.strftime("%H:%M")
+        hora = hora_inicio.strftime("%H:%M") if hora_inicio else "siguiente"
         v1 = nivel_volatilidad(d1.get("volatilidad")) or ""
         v2 = nivel_volatilidad(d2.get("volatilidad")) or ""
         self.hoja.anadir_cuotas([{
@@ -195,7 +211,8 @@ class Vigia:
         } for f in filas])
 
         partes = cuotas.resumen_aviso(filas, n1, n2)
-        texto = f"🎯 ~{hora} {apellido(n1)} vs {apellido(n2)} · " + " · ".join(partes)
+        cuando = hora if hora_inicio else "Siguiente:"
+        texto = f"🎯 {cuando} {apellido(n1)} vs {apellido(n2)} · " + " · ".join(partes)
         if req["rebaja"]:
             texto += (f" · ⚠️ vol {req['vol']:.1f}: edge ≥{req['edge_min']*100:.0f} %"
                       .replace(".", ","))
@@ -225,7 +242,7 @@ class Vigia:
             real = None
             for j in jornadas:
                 if j not in cache:
-                    cache[j] = md.partidos_de_jornada(md.descargar_lineas(j))
+                    cache[j] = md.partidos_de_jornada(self.datos.lineas(j))
                 for cp in cache[j]:
                     if cp["estado"] != "terminado":
                         continue

@@ -140,7 +140,7 @@ def _tarjeta(f):
 
 
 def render_alertas():
-    st.caption("Apuestas apuntadas desde Value Bets con el botón «Modus value». "
+    st.caption("Apuestas marcadas en Value Bets («La he apostado» / «No la apuesto»). "
                "Se actualiza al pulsar **Actualizar** (o solo, cada minuto como mucho).")
     if not es_admin():
         st.info("🔒 Las alertas solo se ven en modo administrador.")
@@ -156,7 +156,7 @@ def render_alertas():
     de_hoy = [f for f in filas if f.get("fecha") == hoy]
     gastado = gastado_del_dia(filas, hoy)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Avisos hoy", len(de_hoy))
+    c1.metric("Apuestas hoy", len(de_hoy))
     c2.metric("Tope gastado", _eur(gastado), help=f"Tope diario: {_eur(TOPE_DIARIO)}")
     c3.metric("Queda", _eur(max(0.0, TOPE_DIARIO - gastado)))
     st.progress(min(1.0, gastado / TOPE_DIARIO) if TOPE_DIARIO else 0.0)

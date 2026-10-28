@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from vigia.horario import estimar_inicios, fecha_jornada, proxima_ventana, ventana
+from vigia.horario import fecha_jornada, proxima_ventana, toca_avisar, ventana
 
 M = ZoneInfo("Europe/Madrid")
 
@@ -38,29 +38,39 @@ def test_proxima_ventana():
     assert proxima_ventana(d(2026, 11, 8, 12, 0))[0] == d(2026, 11, 9, 10, 0)
 
 
-def _p(orden, estado):
-    return {"orden": orden, "estado": estado}
+def _p(estado, hora=None):
+    p = {"estado": estado}
+    if hora:
+        p["hora"] = hora
+    return p
 
 
-def test_estimacion_antes_de_empezar():
-    inicio = d(2026, 11, 5, 14, 0)
-    est = estimar_inicios([_p(i, "pendiente") for i in range(4)], inicio,
-                          d(2026, 11, 5, 13, 40), {}, 10)
-    assert [est[i].strftime("%H:%M") for i in range(4)] == ["14:00", "14:10", "14:20", "14:30"]
+INICIO = d(2026, 11, 5, 14, 0)     # Grupo C jueves
 
 
-def test_estimacion_con_un_partido_en_juego():
-    inicio = d(2026, 11, 5, 14, 0)
-    lista = [_p(0, "terminado"), _p(1, "en_juego"), _p(2, "pendiente"), _p(3, "pendiente")]
-    visto = {1: d(2026, 11, 5, 14, 12)}
-    est = estimar_inicios(lista, inicio, d(2026, 11, 5, 14, 15), visto, 10)
-    assert est == {2: d(2026, 11, 5, 14, 22), 3: d(2026, 11, 5, 14, 32)}
-    # Si el partido en juego se alarga, los siguientes se corren
-    est = estimar_inicios(lista, inicio, d(2026, 11, 5, 14, 30), visto, 10)
-    assert est[2] == d(2026, 11, 5, 14, 30)
+def test_el_primero_se_avisa_minutos_antes_del_inicio():
+    lista = [_p("pendiente"), _p("pendiente")]
+    assert toca_avisar(lista, 0, INICIO, d(2026, 11, 5, 13, 49), 10) == (False, INICIO)
+    assert toca_avisar(lista, 0, INICIO, d(2026, 11, 5, 13, 50), 10) == (True, INICIO)
+    # Si el vigia arranca tarde, se avisa igual
+    assert toca_avisar(lista, 0, INICIO, d(2026, 11, 5, 14, 20), 10)[0] is True
 
 
-def test_estimacion_tras_un_terminado():
-    lista = [_p(0, "terminado"), _p(1, "pendiente")]
-    ahora = d(2026, 11, 2, 10, 50)
-    assert estimar_inicios(lista, d(2026, 11, 2, 10, 30), ahora, {}, 10) == {1: ahora}
+def test_los_demas_al_terminar_el_anterior():
+    ahora = d(2026, 11, 5, 14, 5)
+    assert toca_avisar([_p("en_juego"), _p("pendiente")], 1, INICIO, ahora) == (False, None)
+    assert toca_avisar([_p("terminado"), _p("pendiente")], 1, INICIO, ahora) == (True, None)
+    # El de despues del siguiente aun no
+    assert toca_avisar([_p("terminado"), _p("pendiente"), _p("pendiente")], 2,
+                       INICIO, ahora) == (False, None)
+    # Partidos ya empezados o terminados nunca
+    assert toca_avisar([_p("terminado"), _p("en_juego")], 1, INICIO, ahora)[0] is False
+
+
+def test_partido_con_hora_en_el_calendario():
+    hora = d(2026, 11, 5, 15, 30)
+    lista = [_p("en_juego"), _p("pendiente", hora)]
+    assert toca_avisar(lista, 1, INICIO, d(2026, 11, 5, 15, 19), 10) == (False, hora)
+    assert toca_avisar(lista, 1, INICIO, d(2026, 11, 5, 15, 20), 10) == (True, hora)
+    assert toca_avisar(lista, 1, INICIO, d(2026, 11, 5, 15, 25), 5) == (True, hora)
+    assert toca_avisar(lista, 1, INICIO, d(2026, 11, 5, 15, 24), 5) == (False, hora)
