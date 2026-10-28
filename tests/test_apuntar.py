@@ -36,16 +36,31 @@ def test_no_apostada_devuelve_el_importe():
     assert reglas.apuntar(previas, FECHA, "Andy Baetens", "Self", EV_15) == (10.0, "")
 
 
-def test_una_apuesta_por_partido():
+def test_varias_apuestas_en_el_mismo_partido():
+    # Ya no hay limite de una por partido: lo decides tu
     previas = [_f(2.5, j1="Self", j2="Andy Baetens")]
-    imp, motivo = reglas.apuntar(previas, FECHA, "Andy Baetens", "Self", EV_15)
-    assert imp == 0 and "ya hay" in motivo
-    # Si se marco 'no apostada', se puede apuntar otra
-    previas = [_f(2.5, "no apostada", j1="Self", j2="Andy Baetens")]
-    assert reglas.apuntar(previas, FECHA, "Andy Baetens", "Self", EV_15)[0] == 15
-    # Otro dia no cuenta
-    previas = [_f(2.5, j1="Self", j2="Andy Baetens", fecha="2026-11-04")]
-    assert reglas.apuntar(previas, FECHA, "Andy Baetens", "Self", EV_15)[0] == 15
+    assert reglas.apuntar(previas, FECHA, "Andy Baetens", "Self", EV_15) == (15.0, "")
+
+
+def test_importe_cambiado_a_mano():
+    from vigia.registro import (beneficio_real, gastado_del_dia, por_mercado,
+                                resumen_apuestas)
+    # Recomendado 5, apostaste 20: cuenta 20 en el tope y en lo real...
+    f = dict(_f(5, "apostada", fecha="2026-11-04"), importe_real="20", cuota=2.0,
+             resultado="ganada", mercado="Ganador")
+    assert gastado_del_dia([f], "2026-11-04") == 20
+    assert beneficio_real([f]) == 20
+    real = resumen_apuestas([f], solo_apostadas=True)
+    assert (real["invertido"], real["beneficio"]) == (20, 20)
+    # ...pero las estadisticas del modelo siguen con el recomendado
+    todas = resumen_apuestas([f], solo_apostadas=False)
+    assert (todas["invertido"], todas["beneficio"]) == (5, 5)
+    total = por_mercado([f])[0][-1]
+    assert total["todas"]["beneficio"] == 5 and total["reales"]["beneficio"] == 20
+    # Sin importe_real, lo apostado es el recomendado
+    assert gastado_del_dia([dict(f, importe_real="")], "2026-11-04") == 5
+    # Una 'no apostada' no gasta aunque tenga importe_real
+    assert gastado_del_dia([dict(f, estado="no apostada")], "2026-11-04") == 0
 
 
 def test_sin_edge_y_margen_grande():

@@ -260,7 +260,9 @@ class Vigia:
             if ok is None:
                 continue
             resultado = "ganada" if ok else "perdida"
-            ben = registro.beneficio_fila(dict(f, resultado=resultado))
+            # Las apostadas, con lo que de verdad apostaste (importe_real)
+            ben = registro.beneficio_fila(dict(f, resultado=resultado),
+                                          real=f.get("estado") == registro.ESTADO_APOSTADA)
             self.hoja.actualizar_resultado(f["_fila"], resultado, ben)
             self._log("resultado", f.get("partido", ""),
                       f"{resultado} ({real[0]}-{real[1]}, 180s {real[2]}-{real[3]})")

@@ -113,8 +113,9 @@ pásame el archivo.
 | Value | edge = p × cuota − 1 ≥ el mínimo exigido (20 %, o más con volatilidad alta) |
 | 🟢 | p − 1/cuota ≥ margen del mercado (`MARGEN_POR_MERCADO` de `config.py`: ganador 6, total de legs 8, hándicaps y 180s 5). Resultado exacto nunca 🟢 |
 | Importe | edge 20–35 % → 5 €; 35–50 % → 10 €; más del 50 % → 15 €. Más de 5 € solo si 🟢 y cuota ≤ 4,00 |
-| Por partido | una apuesta como máximo (las marcadas «no apostada» no cuentan) |
-| Tope | 50 € por jornada más tu beneficio real acumulado (las apuestas marcadas «apostada» ya liquidadas; si vas en pérdidas, 50 €). Se recorta en múltiplos de 5 €; una «no apostada» devuelve su importe |
+| Por partido | sin límite: puedes apostar a varias selecciones del mismo partido si lo consideras |
+| Tope | 50 € por jornada más tu beneficio real acumulado (las apuestas marcadas «apostada» ya liquidadas; si vas en pérdidas, 50 €). El importe recomendado se recorta en múltiplos de 5 € a lo que quede; una «no apostada» devuelve su importe |
+| Importe a mano | en Value Bets eliges el importe antes de pulsar «Apostar» (por defecto, el recomendado), y en 🎟️ Apuestas lo puedes cambiar después con ✏️ Importe. Se guarda en la columna `importe_real` de `alertas` y solo cuenta para **tus apuestas** (tope, «Las que apostaste», beneficio real); las estadísticas del modelo («Si las hubieras hecho todas», seguimiento por mercado, Winamax frente al modelo) siguen con el recomendado (`importe`) |
 
 **Cuotas mínimas** (pestaña `cuotas_minimas`): cuota justa = 1/p; para avisar
 (edge 20 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,20/p;
