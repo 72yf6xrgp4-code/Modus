@@ -156,3 +156,13 @@ también se guardan, sin probabilidad. El vigía rellena la columna `resultado`
   probabilidad del modelo frente a la de Winamax sin su margen, por mercado.
 - **Margen de Winamax:** cuánto se queda la casa en cada mercado
   (suma de 1/cuota − 1).
+
+**¿Están los datos del partido anterior?** Al abrir un partido con el botón
+«Modus value», la app comprueba en la hoja de la jornada en juego, para cada
+jugador, que sus partidos anteriores de hoy ya aparecen terminados y que sus
+estadísticas de hoy (victorias + derrotas) los cuentan todos. Si falta alguno,
+sale un aviso en rojo en «Cuotas de Winamax» (y otro en «Apuestas con valor»)
+diciendo qué partido falta: pulsa «Ejecutar actualización», espera y
+«Refrescar datos» antes de apostar. Si está todo, dice con qué partido anterior
+de cada uno calcula («✅ Datos al día»). Fuera de jornada no se comprueba (se
+usa el Resumen Semanal).
