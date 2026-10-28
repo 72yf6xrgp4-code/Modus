@@ -13,6 +13,10 @@ import numpy as np
 from difflib import SequenceMatcher
 
 from config import PALETA_JUGADORES, BANDERAS, JUGADORES_PAISES
+# Utilidades sin Streamlit (modelo/), reexportadas para el resto de la app
+from modelo.util import safe_float, sanitize_prob, _buscar_stat  # noqa: F401
+from modelo.value import calcular_yield, margen_mercado, es_value  # noqa: F401
+from modelo.volatilidad import nivel_volatilidad
 
 def obtener_color_jugador(nombre):
     """Devuelve un color de fondo único para un jugador.
@@ -134,15 +138,6 @@ def calcular_tendencia(valor_actual, valor_semanal, etiqueta):
         return "", valor_actual, comparativa
 
 
-def safe_float(val, default=0.0):
-    try:
-        v = float(str(val).replace(',', '.').strip())
-        if not np.isfinite(v):
-            return default
-        return v
-    except:
-        return default
-
 def color_volatilidad(valor):
     """Devuelve la paleta de colores (borde, valor, fondo, texto_riesgo, etiqueta_riesgo)
     según el índice de volatilidad, midiendo la irregularidad/riesgo del rendimiento:
@@ -163,21 +158,18 @@ def color_volatilidad(valor):
         "riesgo_texto": "#6b7280", "riesgo_bg": "rgba(156, 163, 175, 0.15)",
         "riesgo_label": ""
     }
-    try:
-        v = float(str(valor).replace('%', '').replace(',', '.').strip())
-    except:
+    # NaN, no numerico o jugador sin datos (valor 0 exacto): paleta neutra
+    nivel = nivel_volatilidad(valor)
+    if nivel is None:
         return paleta_neutra
-    # NaN o jugador sin datos (valor 0 exacto): paleta neutra sin etiqueta
-    if not np.isfinite(v) or v == 0:
-        return paleta_neutra
-    if v < 8:
+    if nivel == "bajo":
         return {
             "borde": "#22c55e", "valor": "#16a34a",
             "bg": "rgba(34, 197, 94, 0.10)",
             "riesgo_texto": "#15803d", "riesgo_bg": "rgba(34, 197, 94, 0.18)",
             "riesgo_label": "RIESGO BAJO"
         }
-    elif v <= 12:
+    elif nivel == "medio":
         return {
             "borde": "#eab308", "valor": "#ca8a04",
             "bg": "rgba(234, 179, 8, 0.12)",
@@ -192,46 +184,8 @@ def color_volatilidad(valor):
             "riesgo_label": "RIESGO ALTO"
         }
 
-def sanitize_prob(p):
-    if not np.isfinite(p) or p <= 0:
-        return 0.0001
-    if p >= 1:
-        return 0.9999
-    return max(0.0001, min(0.9999, p))
-
 def pct(p):
     return f"{p * 100:.1f}%"
-
-def calcular_yield(prob, cuota_bookie):
-    return (prob * cuota_bookie) - 1
-
-def margen_mercado(mercado=None):
-    """Margen de seguridad del value para un mercado (por la key de su
-    casilla de cuota: 'vic_j1', 'legs_mas', '180_j1_05'...). Si no se
-    reconoce, el general MARGEN_VALUE."""
-    from config import MARGEN_VALUE, MARGEN_POR_MERCADO
-    if mercado:
-        for prefijo, m in MARGEN_POR_MERCADO.items():
-            if str(mercado).startswith(prefijo):
-                return m
-    return MARGEN_VALUE
-
-
-def es_value(y, cuota, margen=None, mercado=None):
-    """True si la apuesta es value con margen de seguridad.
-
-    y = prob * cuota - 1. Exigir prob >= 1/cuota + margen equivale a
-    y >= margen * cuota (a cuota alta hace falta mas yield, porque un error
-    de unos puntos en la probabilidad pesa mas). El margen depende del
-    mercado (MARGEN_POR_MERCADO en config.py).
-    """
-    m = margen_mercado(mercado) if margen is None else margen
-    if y is None or not cuota:
-        return False
-    # 1e-9: que justo en el limite (p. ej. 58 % a cuota 2,00 con margen 8)
-    # cuente como value pese al redondeo de los decimales
-    return y > 0 and y >= m * cuota - 1e-9
-
 
 def icono_yield(y, cuota, mercado=None):
     """🟢 value con margen · 🟡 yield positivo pero dentro del margen
@@ -250,13 +204,6 @@ def badge_yield(y):
         return f"❌ {y*100:.1f}%"
     else:
         return f"➖ {y*100:.1f}%"
-
-def _buscar_stat(stats_dict, keywords):
-    for k, v in stats_dict.items():
-        if any(kw in k.lower() for kw in keywords):
-            return v
-    return 0.0
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FECHAS DEL TORNEO (hora de Madrid)

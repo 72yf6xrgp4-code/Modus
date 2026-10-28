@@ -1,1 +1,13 @@
 __pycache__/
+
+# Vigia: secretos, credenciales, logs y entorno local (nunca al repo)
+.env
+*.env.local
+*cuenta-servicio*.json
+*service-account*.json
+*service_account*.json
+*credenciales*.json
+logs/
+.venv/
+venv/
+.pytest_cache/

@@ -1026,6 +1026,11 @@ def render_value_bets():
     st.caption("Pon como **Jugador 1** al que aparece primero en el cartel del "
                "partido: el modelo le da la ventaja de empezar lanzando.")
 
+    # Llegada por enlace (aviso del vigia o boton "Modus value"): elige el
+    # partido y rellena las cuotas antes de crear los selectores.
+    from cuotas_url import preparar_value_bets
+    preparar_value_bets(nombres_disponibles)
+
     # ── Desplegable de próximos partidos ──────────────────────────────────────
     # Lista los 5 próximos partidos que aún no han empezado, leídos del CSV
     # de la jornada que toca (activa o, si no hay, la próxima). NO usa la API
@@ -2116,6 +2121,10 @@ def render_value_bets():
             st.info("✍️ Escribe la cuota de tu casa de apuestas en cualquier "
                     "mercado de las pestañas de arriba y aquí verás si tiene "
                     "value.")
+
+    # Cuotas recibidas del boton "Modus value" (todas, con su importe)
+    from cuotas_url import render_panel_winamax
+    render_panel_winamax(j1, j2, j1_sel, j2_sel)
 
 def render_heatmap_estadisticas(stats_dict, titulo="📊 Comparativa de Estadísticas"):
     """Renderiza un heatmap (tabla coloreada) con las 5 métricas clave por jugador.
