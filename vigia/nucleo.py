@@ -223,37 +223,37 @@ class Vigia:
         log.info("AVISO %s", texto)
 
     # ── resultados de las apuestas apuntadas en la app ───────────────────
+    def _resultado_real(self, f, cache):
+        """(legs1, legs2, 180s_1, 180s_2) del partido de la fila f, con J1/J2
+        en el orden de la fila, si ya ha terminado; si no, None."""
+        try:
+            dia = datetime.fromisoformat(f["fecha"])
+        except (KeyError, ValueError, TypeError):
+            return None
+        jornadas = [f.get("jornada")] if f.get("jornada") else md.jornadas_del_dia(dia)
+        for j in jornadas:
+            if j not in cache:
+                cache[j] = md.partidos_de_jornada(self.datos.lineas(j))
+            for cp in cache[j]:
+                if cp["estado"] != "terminado":
+                    continue
+                if mismo_jugador(cp["j1"], f["j1"]) and mismo_jugador(cp["j2"], f["j2"]):
+                    return (cp["legs1"], cp["legs2"], cp["t180_1"], cp["t180_2"])
+                if mismo_jugador(cp["j1"], f["j2"]) and mismo_jugador(cp["j2"], f["j1"]):
+                    return (cp["legs2"], cp["legs1"], cp["t180_2"], cp["t180_1"])
+        return None
+
     def liquidar(self):
-        """Apunta resultado y beneficio de las alertas cuyos partidos ya han
-        terminado (leyendo las pestanas de jornada del Sheet)."""
+        """Apunta el resultado de las apuestas (pestana alertas: resultado y
+        beneficio) y de las cuotas guardadas con el boton (cuotas_winamax)
+        cuyos partidos ya han terminado."""
+        cache = {}
+        n = 0
         filas = [f for f in self.hoja.alertas()
                  if f.get("tipo_aviso") in (registro.AVISO_APUESTA, registro.AVISO_REVISAR)
                  and f.get("resultado") not in ("ganada", "perdida")]
-        if not filas:
-            return 0
-        cache = {}
-        n = 0
         for f in filas:
-            try:
-                dia = datetime.fromisoformat(f["fecha"])
-            except (KeyError, ValueError):
-                continue
-            jornadas = [f.get("jornada")] if f.get("jornada") else md.jornadas_del_dia(dia)
-            real = None
-            for j in jornadas:
-                if j not in cache:
-                    cache[j] = md.partidos_de_jornada(self.datos.lineas(j))
-                for cp in cache[j]:
-                    if cp["estado"] != "terminado":
-                        continue
-                    if mismo_jugador(cp["j1"], f["j1"]) and mismo_jugador(cp["j2"], f["j2"]):
-                        real = (cp["legs1"], cp["legs2"], cp["t180_1"], cp["t180_2"])
-                    elif mismo_jugador(cp["j1"], f["j2"]) and mismo_jugador(cp["j2"], f["j1"]):
-                        real = (cp["legs2"], cp["legs1"], cp["t180_2"], cp["t180_1"])
-                    if real:
-                        break
-                if real:
-                    break
+            real = self._resultado_real(f, cache)
             if not real:
                 continue
             ok = reglas.acierta(registro.seleccion(f), *real)
@@ -265,4 +265,19 @@ class Vigia:
             self._log("resultado", f.get("partido", ""),
                       f"{resultado} ({real[0]}-{real[1]}, 180s {real[2]}-{real[3]})")
             n += 1
-        return n
+
+        # Cuotas de Winamax guardadas con el boton: todas en una peticion
+        cambios = []
+        for f in self.hoja.filas_winamax():
+            if f.get("resultado") in ("ganada", "perdida") or not f.get("seleccion_json"):
+                continue
+            real = self._resultado_real(f, cache)
+            if not real:
+                continue
+            ok = reglas.acierta(registro.seleccion(f), *real)
+            if ok is not None:
+                cambios.append((f["_fila"], "ganada" if ok else "perdida"))
+        if cambios:
+            self.hoja.resultados_winamax(cambios)
+            self._log("resultado", "", f"{len(cambios)} cuotas de Winamax con resultado")
+        return n + len(cambios)

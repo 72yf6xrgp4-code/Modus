@@ -11,9 +11,9 @@ con su cabecera si no existen.
 import logging
 import re
 
-from vigia.registro import (HOJA_ALERTAS, HOJA_LOG, HOJA_CUOTAS,
+from vigia.registro import (HOJA_ALERTAS, HOJA_LOG, HOJA_CUOTAS, HOJA_WINAMAX,
                             COLUMNAS_ALERTAS, COLUMNAS_LOG, COLUMNAS_CUOTAS,
-                            filas_a_dicts)
+                            COLUMNAS_WINAMAX, filas_a_dicts)
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class HojaGoogle:
         self.ws_alertas = self._pestana(HOJA_ALERTAS, COLUMNAS_ALERTAS)
         self.ws_log = self._pestana(HOJA_LOG, COLUMNAS_LOG)
         self.ws_cuotas = self._pestana(HOJA_CUOTAS, COLUMNAS_CUOTAS)
+        self.ws_winamax = self._pestana(HOJA_WINAMAX, COLUMNAS_WINAMAX)
         self._log_pendiente = []
 
     def _pestana(self, nombre, columnas):
@@ -90,6 +91,17 @@ class HojaGoogle:
         self.ws_cuotas.append_rows([[f.get(c, "") for c in COLUMNAS_CUOTAS]
                                     for f in filas], value_input_option="RAW")
 
+    def filas_winamax(self):
+        return filas_a_dicts(self.ws_winamax.get_all_values())
+
+    def resultados_winamax(self, cambios):
+        """[(n_fila, 'ganada'|'perdida')] en una sola peticion."""
+        from gspread.utils import rowcol_to_a1
+        col = COLUMNAS_WINAMAX.index("resultado") + 1
+        self.ws_winamax.batch_update(
+            [{"range": rowcol_to_a1(n, col), "values": [[r]]} for n, r in cambios],
+            value_input_option="RAW")
+
     def log(self, fila):
         self._log_pendiente.append([fila.get(c, "") for c in COLUMNAS_LOG])
 
@@ -111,8 +123,9 @@ class HojaGoogle:
 class HojaMemoria:
     """Hoja en memoria (modo --simular sin credenciales y tests)."""
 
-    def __init__(self, alertas=None):
+    def __init__(self, alertas=None, winamax=None):
         self._alertas = list(alertas or [])
+        self._winamax = list(winamax or [])
         self.logs = []
         self.cuotas = []
 
@@ -128,6 +141,13 @@ class HojaMemoria:
 
     def anadir_cuotas(self, filas):
         self.cuotas.extend(dict(f) for f in filas)
+
+    def filas_winamax(self):
+        return [dict(f, _fila=i + 2) for i, f in enumerate(self._winamax)]
+
+    def resultados_winamax(self, cambios):
+        for n, r in cambios:
+            self._winamax[n - 2]["resultado"] = r
 
     def log(self, fila):
         self.logs.append(dict(fila))
@@ -160,6 +180,12 @@ class HojaSoloLectura:
 
     def anadir_cuotas(self, filas):
         self._memoria.anadir_cuotas(filas)
+
+    def filas_winamax(self):
+        return self._hoja.filas_winamax()
+
+    def resultados_winamax(self, cambios):
+        log.info("[simular] %d cuotas de Winamax con resultado", len(cambios))
 
     def log(self, fila):
         self._memoria.log(fila)

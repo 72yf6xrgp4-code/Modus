@@ -20,7 +20,8 @@ import streamlit as st
 
 from config import SHEET_ID_PREDICCIONES
 from helpers import es_admin, fecha_jornada_madrid
-from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, AVISO_APUESTA,
+from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, HOJA_WINAMAX,
+                            COLUMNAS_WINAMAX, estadisticas_winamax, AVISO_APUESTA,
                             AVISO_REVISAR, ESTADO_APOSTADA,
                             ESTADO_NO_APOSTADA, ESTADO_PENDIENTE,
                             filas_a_dicts, gastado_del_dia, num,
@@ -91,6 +92,99 @@ def marcar_estado(fila, estado):
         return False, str(e)
     cargar_alertas.clear()
     return True, ""
+
+
+def _pestana(nombre, columnas):
+    """(worksheet, error) de una pestana del Sheet de predicciones; la crea
+    con su cabecera si no existe."""
+    try:
+        from predicciones import _conectar_gsheets
+    except Exception as e:
+        return None, f"No se pudo cargar la conexion con Google: {e}"
+    cliente, err = _conectar_gsheets()
+    if cliente is None:
+        return None, err
+    try:
+        libro = cliente.open_by_key(SHEET_ID_PREDICCIONES)
+        try:
+            return libro.worksheet(nombre), ""
+        except Exception:
+            ws = libro.add_worksheet(title=nombre, rows=2000, cols=len(columnas))
+            ws.append_row(columnas)
+            return ws, ""
+    except Exception as e:
+        return None, str(e)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_winamax():
+    """Filas de la pestana 'cuotas_winamax' (o (None, error))."""
+    ws, err = _pestana(HOJA_WINAMAX, COLUMNAS_WINAMAX)
+    if ws is None:
+        return None, err
+    try:
+        return filas_a_dicts(ws.get_all_values()), ""
+    except Exception as e:
+        return None, f"Error leyendo las cuotas de Winamax: {e}"
+
+
+def anadir_winamax(filas):
+    """Guarda las cuotas leidas con el boton (una peticion). (ok, error)"""
+    ws, err = _pestana(HOJA_WINAMAX, COLUMNAS_WINAMAX)
+    if ws is None:
+        return False, err
+    try:
+        ws.append_rows([[f.get(c, "") for c in COLUMNAS_WINAMAX] for f in filas],
+                       value_input_option="RAW")
+    except Exception as e:
+        return False, str(e)
+    cargar_winamax.clear()
+    return True, ""
+
+
+def eliminar_alerta(fila):
+    """Borra la fila de la alerta en la hoja. Antes comprueba que en esa
+    fila sigue estando la misma alerta (la lista va con cache de 60 s y la
+    hoja puede haber cambiado). (ok, error)"""
+    ws, err = _hoja_alertas()
+    if ws is None:
+        return False, err
+    try:
+        actual = ws.row_values(fila["_fila"])
+        cab = COLUMNAS_ALERTAS
+        def v(c):
+            k = cab.index(c)
+            return str(actual[k]).strip() if k < len(actual) else ""
+        for c in ("fecha", "hora", "partido", "seleccion"):
+            if v(c) != str(fila.get(c, "")).strip():
+                return False, ("la hoja ha cambiado desde que se cargó; pulsa "
+                               "«Actualizar» y vuelve a intentarlo")
+        ws.delete_rows(fila["_fila"])
+    except Exception as e:
+        return False, str(e)
+    cargar_alertas.clear()
+    return True, ""
+
+
+def _botones(f, clave, marcar=True):
+    """Apostada / No apostada / Eliminar debajo de una tarjeta."""
+    b1, b2, b3, _ = st.columns([1, 1, 1, 2])
+    if marcar and f.get("tipo_aviso") == AVISO_APUESTA:
+        if b1.button("✅ Apostada", key=f"al_si_{clave}",
+                     disabled=f.get("estado") == ESTADO_APOSTADA):
+            _marcar(f, ESTADO_APOSTADA)
+        if b2.button("❌ No apostada", key=f"al_no_{clave}",
+                     disabled=f.get("estado") == ESTADO_NO_APOSTADA):
+            _marcar(f, ESTADO_NO_APOSTADA)
+    with b3.popover("🗑️ Eliminar"):
+        st.markdown(f"¿Eliminar **{html_mod.escape(str(f.get('seleccion', '')))}** "
+                    f"({html_mod.escape(str(f.get('partido', '')))}, {f.get('fecha', '')})? "
+                    "Se borra de la hoja y no se puede deshacer.")
+        if st.button("Sí, eliminar", key=f"al_del_{clave}", type="primary"):
+            ok, error = eliminar_alerta(f)
+            if ok:
+                st.rerun()
+            st.error(f"No se pudo eliminar: {error}")
 
 
 def _marcar(fila, estado):
@@ -170,14 +264,7 @@ def render_alertas():
         st.info("Sin apuestas apuntadas hoy.")
     for f in sorted(de_hoy, key=lambda x: x.get("hora", ""), reverse=True):
         _tarjeta(f)
-        if f.get("tipo_aviso") == AVISO_APUESTA:
-            b1, b2, _ = st.columns([1, 1, 3])
-            if b1.button("✅ Apostada", key=f"al_si_{f['_fila']}",
-                         disabled=f.get("estado") == ESTADO_APOSTADA):
-                _marcar(f, ESTADO_APOSTADA)
-            if b2.button("❌ No apostada", key=f"al_no_{f['_fila']}",
-                         disabled=f.get("estado") == ESTADO_NO_APOSTADA):
-                _marcar(f, ESTADO_NO_APOSTADA)
+        _botones(f, f["_fila"])
 
     st.subheader("Histórico")
     anteriores = [f for f in filas if f.get("fecha") != hoy]
@@ -189,16 +276,21 @@ def render_alertas():
                    "como apostada / no apostada:")
         for f in pendientes[-10:]:
             _tarjeta(f)
-            b1, b2, _ = st.columns([1, 1, 3])
-            if b1.button("✅ Apostada", key=f"al_si_{f['_fila']}"):
-                _marcar(f, ESTADO_APOSTADA)
-            if b2.button("❌ No apostada", key=f"al_no_{f['_fila']}"):
-                _marcar(f, ESTADO_NO_APOSTADA)
+            _botones(f, f["_fila"])
     _evolucion(filas)
     _por_mercado(filas)
     if anteriores:
         with st.expander(f"📋 Todas las alertas anteriores ({len(anteriores)})"):
             st.dataframe(_tabla(anteriores), use_container_width=True, hide_index=True)
+            st.markdown("**Eliminar una alerta anterior**")
+            lista = list(reversed(anteriores))
+            i = st.selectbox("Alerta", range(len(lista)), key="al_del_sel",
+                             format_func=lambda k: (f"{lista[k].get('fecha')} {lista[k].get('hora')} · "
+                                                    f"{lista[k].get('partido')} · "
+                                                    f"{lista[k].get('seleccion')}"),
+                             label_visibility="collapsed")
+            _botones(lista[i], f"ant_{lista[i]['_fila']}", marcar=False)
+    _estadisticas_winamax()
 
 
 def _tabla(filas):
@@ -306,6 +398,66 @@ def _por_mercado(filas):
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
         st.caption("Cada casilla: ganadas / liquidadas · ROI. El nivel es el del jugador "
                    "más irregular del partido.")
+
+
+def _estadisticas_winamax():
+    """Cuotas de Winamax guardadas con el boton, frente al modelo."""
+    st.markdown("#### 🌐 Winamax frente al modelo")
+    filas, err = cargar_winamax()
+    if filas is None:
+        st.caption(f"⚠️ {err}")
+        return
+    if not filas:
+        st.info("Aún no hay cuotas guardadas. Cada vez que uses el botón «Modus value» se "
+                "guardan todas las cuotas leídas en la pestaña cuotas_winamax; el vigía "
+                "apunta después si se cumplieron.")
+        return
+    e = estadisticas_winamax(filas)
+    r = e["resumen"]
+    a, b, c = st.columns(3)
+    a.metric("Partidos leídos", r["lecturas"])
+    b.metric("Cuotas guardadas", r["cuotas"])
+    c.metric("Con resultado", r["liquidadas"])
+
+    def pct(v, signo=False):
+        if v is None:
+            return "—"
+        return (f"{v*100:+.1f} %" if signo else f"{v*100:.1f} %").replace(".", ",")
+
+    t1, t2, t3 = st.tabs(["Por edge", "Modelo vs Winamax", "Margen de Winamax"])
+    with t1:
+        st.caption("Si hubieras apostado 1 € a TODAS las cuotas leídas, según el edge "
+                   "que daba el modelo. Sirve para ver a partir de qué edge gana.")
+        st.dataframe(pd.DataFrame([{
+            "Edge": t["nombre"], "Apuestas": t["n"], "Ganadas": t["ganadas"],
+            "Beneficio": _eur(t["beneficio"]), "ROI": pct(t["roi"], True)} for t in e["tramos"]]),
+            use_container_width=True, hide_index=True)
+        if e["mercados"]:
+            st.markdown("**Con edge de 20 % o más, por mercado**")
+            st.dataframe(pd.DataFrame([{
+                "Mercado": t["nombre"], "Apuestas": t["n"], "Ganadas": t["ganadas"],
+                "Beneficio": _eur(t["beneficio"]), "ROI": pct(t["roi"], True)}
+                for t in e["mercados"]]), use_container_width=True, hide_index=True)
+    with t2:
+        st.caption("Quién estima mejor la probabilidad de cada selección: el modelo o "
+                   "las cuotas de Winamax (sin su margen). Puntuación de Brier: cuanto "
+                   "más baja, mejor.")
+        if e["precision"]:
+            st.dataframe(pd.DataFrame([{
+                "Mercado": p["mercado"], "Selecciones": p["n"],
+                "Brier modelo": f"{p['brier_modelo']:.3f}".replace(".", ","),
+                "Brier Winamax": f"{p['brier_winamax']:.3f}".replace(".", ","),
+                "Mejor": p["mejor"]} for p in e["precision"]]),
+                use_container_width=True, hide_index=True)
+        else:
+            st.info("Aún no hay selecciones con resultado.")
+    with t3:
+        st.caption("Lo que se queda Winamax en cada mercado: suma de 1/cuota de todas "
+                   "las salidas menos 1. Cuanto más alto, peores cuotas.")
+        st.dataframe(pd.DataFrame([{
+            "Mercado": m["mercado"], "Veces leído": m["mercados"],
+            "Margen medio": pct(m["margen"])} for m in e["margen"]]),
+            use_container_width=True, hide_index=True)
 
 
 def _instalar_boton():
