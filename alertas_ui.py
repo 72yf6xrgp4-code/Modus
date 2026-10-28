@@ -7,13 +7,15 @@ Las filas viven en la pestana 'alertas' del Google Sheet de predicciones.
 Se leen con cache de 60 s y boton Actualizar (sin autorefresco ni tareas en
 segundo plano). Escrituras: apuntar una apuesta y los botones apostada /
 no apostada (cambian la celda 'estado'; una 'no apostada' devuelve su
-importe al tope). El resultado y el beneficio los apunta el vigia del
-portatil leyendo los resultados de la hoja.
+importe al tope). El resultado y el beneficio los apunta el vigia (del
+portatil o de GitHub) y, por si ninguno esta en marcha, tambien esta
+pestana al abrirla (como mucho cada 10 minutos, o al pulsar Actualizar).
 
 Las apuestas son personales: todo se muestra solo en modo administrador.
 """
 
 import html as html_mod
+import time
 
 import pandas as pd
 import streamlit as st
@@ -262,7 +264,100 @@ def _pct(v):
 def _boton_actualizar(key):
     if st.button("🔄 Actualizar", key=key):
         cargar_alertas.clear()
+        cargar_winamax.clear()
+        st.session_state.pop("_liq_t", None)   # y vuelve a buscar resultados
         st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESULTADOS DESDE LA APP (por si el vigia no esta en marcha)
+# ─────────────────────────────────────────────────────────────────────────────
+
+LIQUIDAR_CADA_SEG = 600
+
+
+class _HojaApp:
+    """Lo que necesita Vigia.liquidar, con la conexion de la app. Las
+    escrituras se juntan y se hacen en una peticion por pestana."""
+
+    def __init__(self, ws_alertas, ws_winamax):
+        self.ws_alertas, self.ws_winamax = ws_alertas, ws_winamax
+        self._res = []
+
+    def alertas(self):
+        return filas_a_dicts(self.ws_alertas.get_all_values())
+
+    def actualizar_resultado(self, n_fila, resultado, beneficio):
+        self._res.append((n_fila, resultado, round(beneficio, 2)))
+
+    def filas_winamax(self):
+        return filas_a_dicts(self.ws_winamax.get_all_values()) if self.ws_winamax else []
+
+    def resultados_winamax(self, cambios):
+        from gspread.utils import rowcol_to_a1
+        col = COLUMNAS_WINAMAX.index("resultado") + 1
+        self.ws_winamax.batch_update(
+            [{"range": rowcol_to_a1(n, col), "values": [[r]]} for n, r in cambios],
+            value_input_option="RAW")
+
+    def log(self, fila):
+        pass
+
+    def volcar(self):
+        from gspread.utils import rowcol_to_a1
+        if not self._res:
+            return
+        c_res = COLUMNAS_ALERTAS.index("resultado") + 1
+        c_ben = COLUMNAS_ALERTAS.index("beneficio") + 1
+        datos = []
+        for n, r, b in self._res:
+            datos += [{"range": rowcol_to_a1(n, c_res), "values": [[r]]},
+                      {"range": rowcol_to_a1(n, c_ben), "values": [[b]]}]
+        self.ws_alertas.batch_update(datos, value_input_option="RAW")
+
+
+def _pendientes(filas):
+    return any(f.get("tipo_aviso") == AVISO_APUESTA
+               and f.get("resultado") not in ("ganada", "perdida") for f in filas)
+
+
+def liquidar_desde_app(filas):
+    """Apunta el resultado de las apuestas (y de las cuotas de Winamax
+    guardadas) cuyos partidos ya han terminado, leyendo las hojas de las
+    jornadas. Lo mismo que hace el vigia. (n, error)"""
+    wm, _ = cargar_winamax()
+    if not _pendientes(filas) and not any(
+            f.get("seleccion_json") and f.get("resultado") not in ("ganada", "perdida")
+            for f in (wm or [])):
+        return 0, ""
+    from vigia.nucleo import DatosSheet, Vigia
+    ws, err = _hoja_alertas()
+    if ws is None:
+        return 0, err
+    ws_wm, _ = _pestana(HOJA_WINAMAX, COLUMNAS_WINAMAX)
+    try:
+        hoja = _HojaApp(ws, ws_wm)
+        n = Vigia(hoja, None, DatosSheet(), None).liquidar()
+        hoja.volcar()
+    except Exception as e:
+        return 0, str(e)
+    if n:
+        cargar_alertas.clear()
+        cargar_winamax.clear()
+    return n, ""
+
+
+def _liquidar_al_abrir(filas):
+    """Como mucho cada LIQUIDAR_CADA_SEG por sesion (o al pulsar Actualizar)."""
+    if time.time() - st.session_state.get("_liq_t", 0) < LIQUIDAR_CADA_SEG:
+        return False
+    st.session_state["_liq_t"] = time.time()
+    n, err = liquidar_desde_app(filas)
+    if err:
+        st.caption(f"⚠️ No se pudieron apuntar los resultados: {err}")
+    elif n:
+        st.toast(f"✅ {n} resultados nuevos apuntados")
+    return n > 0
 
 
 def _tarjeta(f):
@@ -302,6 +397,8 @@ def render_alertas():
     if filas is None:
         st.warning(f"⚠️ {err}")
         return
+    if _liquidar_al_abrir(filas):
+        filas, _ = cargar_alertas()
 
     hoy = fecha_jornada_madrid()
     de_hoy = [f for f in filas if f.get("fecha") == hoy]

@@ -2,7 +2,7 @@
 
 Dos piezas, ninguna pide nada a Winamax:
 
-1. **Vigía (portátil Windows).** Durante las jornadas lee los datos de la hoja
+1. **Vigía (portátil Windows y/o GitHub).** Durante las jornadas lee los datos de la hoja
    (la misma «Forma reciente» que Value Bets) y, cada minuto, el estado de los
    partidos por la API de Google. Cuando un partido pasa a ser **el siguiente**
    (termina el anterior de su jornada; el primero, 10 minutos antes de que
@@ -56,21 +56,62 @@ python -m vigia --liquidar       # conecta con Google y crea la pestaña cuotas_
 python -m vigia --ver            # partidos de hoy, cuándo se avisará de cada uno y cuotas mínimas
 ```
 
-Cuando todo vaya bien, crea las tareas (de una vez):
+Cuando todo vaya bien, crea la tarea (de una vez; si ya la tenías, vuelve a
+ejecutarlo para pasar a la versión nueva):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\crear_tarea_vigia.ps1
 ```
 
-| Tarea | Días | Arranca | Ventana del vigía |
-|---|---|---|---|
-| Modus Vigia L-X | lunes a miércoles | 09:59 | 10:00 – 16:00 (Grupo A 10:30) |
-| Modus Vigia J-V | jueves y viernes | 13:29 | 13:30 – 03:00 (C 14:00 y B 21:00, sin parar entre medias) |
-| Modus Vigia S | sábado | 20:09 | 20:10 – 03:00 (Final 20:40) |
+Crea una sola tarea, **Modus Vigia**, que arranca el vigía:
 
-De 00:00 a 03:00 cuenta como la jornada del día anterior. El portátil tiene
-que estar encendido. Log: `logs\vigia.log` (con rotación). Cuando lo hayas
-probado, puedes borrar `C:\Users\alexm\Modus`.
+| Cuándo | Qué hace el vigía |
+|---|---|
+| L-X 09:59 | ventana 10:00 – 16:00 (Grupo A 10:30) |
+| J-V 13:29 | ventana 13:30 – 03:00 (C 14:00 y B 21:00, sin parar entre medias) |
+| S 20:09 | ventana 20:10 – 03:00 (Final 20:40) |
+| Al iniciar sesión (al encender el PC) y al desbloquearlo | dentro de una ventana, trabaja hasta que acabe; fuera, apunta los resultados pendientes y sale |
+
+Si el PC estaba apagado a la hora de empezar, la tarea arranca en cuanto lo
+enciendas. Nunca hay dos vigías del portátil a la vez. De 00:00 a 03:00
+cuenta como la jornada del día anterior. Log: `logs\vigia.log` (con
+rotación). Si dice «Acceso denegado», abre PowerShell como administrador.
+
+Los resultados se pueden recuperar mientras la pestaña de esa jornada no se
+reescriba (la semana siguiente): unos 6 días.
+
+## 1 bis. Vigía en GitHub (sin el portátil)
+
+El mismo vigía puede correr en GitHub Actions con una pasada cada pocos
+minutos (`python -m vigia --una-vez`): dentro de
+la ventana avisa por ntfy y rellena `cuotas_minimas`; siempre apunta los
+resultados pendientes. Puede convivir con el del portátil: antes de avisar,
+cada uno mira `vigia_log`, así que no llegan avisos repetidos.
+
+0. **El workflow** `.github/workflows/vigia.yml` lo añades tú en GitHub
+   (Add file → Create new file), copiado de la guía que te pasé. Lee la
+   clave de Google de la variable de entorno, igual que el auto-registro,
+   sin guardarla en disco.
+1. **Secretos** (GitHub → repo → Settings → Secrets and variables →
+   Actions → New repository secret):
+   - `NTFY_TEMA`: el mismo tema que en tu `.env`.
+   - `GOOGLE_SERVICE_ACCOUNT_JSON`: ya existe (lo usa el auto-registro).
+   - `SHEET_ID_DATOS` (opcional): el de tu `.env`. Solo sirve si esa cuenta
+     de servicio puede leer el Sheet de las jornadas; si no, usa el CSV
+     publicado (va con unos minutos de retraso).
+2. **cron-job.org**: duplica el trabajo del auto-registro y cambia:
+   - URL: `https://api.github.com/repos/alexmartinezsuarez-commits/modus/actions/workflows/vigia.yml/dispatches`
+     (POST, cuerpo `{"ref":"main"}`, mismas cabeceras y token).
+   - Frecuencia: cada 3 minutos, en las franjas de jornada (L-X 9:55-16:05,
+     J-V 13:25-03:05, S 20:05-03:05). Fuera de horario basta con una vez
+     cada hora (solo apunta resultados).
+
+Cada pasada tarda en arrancar entre 30 s y 1 min, así que los avisos llegan
+un poco más tarde que con el portátil (que mira cada minuto).
+
+**Y además, la app:** al abrir 🎟️ Apuestas apunta los resultados que falten
+(como mucho cada 10 minutos, o al pulsar «Actualizar»). Así el tope y el
+beneficio están al día aunque no haya ningún vigía en marcha.
 
 ## 2. Instalar el botón «Modus value»
 

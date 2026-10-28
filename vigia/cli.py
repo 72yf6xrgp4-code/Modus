@@ -9,6 +9,9 @@ vigia/cli.py - Linea de comandos:
     python -m vigia --ver            partidos de hoy, cuando se avisara de
                                      cada uno y sus cuotas minimas, y sale
     python -m vigia --liquidar       solo apunta resultados pendientes
+    python -m vigia --una-vez        una sola pasada (para GitHub Actions):
+                                     dentro de la ventana avisa y apunta
+                                     resultados; fuera, solo resultados
     python -m vigia --probar-aviso   manda un aviso de prueba al movil
 """
 
@@ -58,6 +61,10 @@ def _argumentos(argv):
     ap.add_argument("--ver", action="store_true",
                     help="muestra los partidos de hoy, cuando se avisara de cada "
                          "uno y sus cuotas minimas, y sale")
+    ap.add_argument("--una-vez", action="store_true",
+                    help="una sola pasada y sale (la lanza GitHub Actions cada "
+                         "pocos minutos): avisos dentro de la ventana y "
+                         "resultados pendientes siempre")
     ap.add_argument("--liquidar", action="store_true",
                     help="solo apunta los resultados pendientes y sale")
     ap.add_argument("--notificador", default=None,
@@ -69,14 +76,33 @@ def _argumentos(argv):
 
 
 def _hoja(aj, simular):
+    import json
+    import os
     from vigia.hoja import HojaGoogle, HojaMemoria, HojaSoloLectura
-    if not aj.credenciales_google:
+    cred = aj.credenciales_google
+    if not cred and os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
+        # En GitHub Actions: el JSON de la cuenta de servicio en la variable
+        # de entorno (como auto_registrar.py), sin escribirlo en disco
+        cred = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+    if not cred:
         if simular:
             log.warning("Sin GOOGLE_CREDENCIALES: hoja en memoria")
             return HojaMemoria()
         raise SystemExit("Falta GOOGLE_CREDENCIALES en .env")
-    hoja = HojaGoogle(aj.credenciales_google, aj.sheet_id, aj.sheet_id_datos)
+    hoja = HojaGoogle(cred, aj.sheet_id, aj.sheet_id_datos)
     return HojaSoloLectura(hoja) if simular else hoja
+
+
+def _liquidar(aj, args):
+    """Apunta los resultados pendientes (alertas y cuotas de Winamax)."""
+    from vigia import notificador as notif_mod
+    from vigia.nucleo import DatosSheet, Vigia
+    hoja = _hoja(aj, args.simular)
+    v = Vigia(hoja, notif_mod.Consola(),
+              DatosSheet(lector=getattr(hoja, "leer_jornada", None)), aj)
+    n = v.liquidar()
+    v.hoja.volcar_log()
+    return n
 
 
 def _ver(aj):
@@ -153,16 +179,23 @@ def main(argv=None):
         return _ver(aj)
 
     if args.liquidar:
-        hoja = _hoja(aj, args.simular)
-        v = Vigia(hoja, notif_mod.Consola(),
-                  DatosSheet(lector=getattr(hoja, "leer_jornada", None)), aj)
-        n = v.liquidar()
-        v.hoja.volcar_log()
-        print(f"Resultados apuntados: {n}")
+        print(f"Resultados apuntados: {_liquidar(aj, args)}")
         return 0
 
     ahora = ahora_madrid()
     v_actual = ventana(ahora)
+    if args.una_vez:
+        if v_actual is None:
+            n = _liquidar(aj, args)
+            log.info("Fuera de la ventana: %d resultados apuntados", n)
+            return 0
+        notif = (notif_mod.Consola() if args.simular
+                 else notif_mod.crear(args.notificador or aj.notificador, aj))
+        hoja = _hoja(aj, args.simular)
+        vigia = Vigia(hoja, notif, DatosSheet(lector=getattr(hoja, "leer_jornada", None)), aj)
+        vigia.ciclo()   # la primera vuelta tambien apunta resultados
+        vigia.hoja.volcar_log()
+        return 0
     if v_actual is None:
         sig = proxima_ventana(ahora)
         if sig and sig[0] - ahora <= timedelta(minutes=60):
@@ -175,6 +208,12 @@ def main(argv=None):
                     "sábado", "domingo"]
             print("Fuera del horario de Modus. Próxima ventana: "
                   + (f"{dias[sig[0].weekday()]} {sig[0]:%d/%m %H:%M}" if sig else "?"))
+            # Al encender el PC fuera de horario: al menos, ponerse al dia
+            # con los resultados de las apuestas
+            try:
+                print(f"Resultados apuntados: {_liquidar(aj, args)}")
+            except Exception:
+                log.exception("Error apuntando resultados")
             return 0
     fin = v_actual[1] if v_actual else None
     if args.hasta:
