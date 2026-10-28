@@ -105,10 +105,11 @@ st.sidebar.markdown("---")
 # pagina, siempre visible. La barra lateral queda para el estado de la
 # jornada, el refresco y el modo administrador.
 SECCIONES = ["🔴 LIVE", "💰 VALUE BETS", "📊 RESULTADOS Y ESTADÍSTICAS",
-             "📈 SEGUIMIENTO", "📚 HISTÓRICO"]
+             "📈 SEGUIMIENTO", "📚 HISTÓRICO", "🔔 ALERTAS"]
 _CORTAS = {"🔴 LIVE": "🔴 Live", "💰 VALUE BETS": "💰 Value Bets",
            "📊 RESULTADOS Y ESTADÍSTICAS": "📊 Resultados",
-           "📈 SEGUIMIENTO": "📈 Seguimiento", "📚 HISTÓRICO": "📚 Histórico"}
+           "📈 SEGUIMIENTO": "📈 Seguimiento", "📚 HISTÓRICO": "📚 Histórico",
+           "🔔 ALERTAS": "🔔 Alertas"}
 if st.session_state.get("seccion") not in SECCIONES:
     st.session_state["seccion"] = st.session_state.get("_ultima_seccion", SECCIONES[0])
 opcion_principal = st.segmented_control(
@@ -455,6 +456,13 @@ elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
 elif "📈 SEGUIMIENTO" in opcion_principal:
     st.title("📈 Seguimiento del modelo")
     render_tracking_predicciones()
+    from alertas_ui import render_seguimiento_apuestas
+    render_seguimiento_apuestas()
+
+elif "🔔 ALERTAS" in opcion_principal:
+    st.title("🔔 Alertas")
+    from alertas_ui import render_alertas
+    render_alertas()
 
 elif "📚 HISTÓRICO" in opcion_principal:
     st.title("📚 Histórico de jugadores")

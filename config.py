@@ -151,6 +151,16 @@ LAMBDA_180_MEDIA_TORNEO = 0.95   # 180s por partido de un jugador medio
 # que un yield de +2 % no es fiable. 0 = cualquier yield positivo (como antes).
 MARGEN_VALUE = 0.05
 
+# Margen de seguridad POR MERCADO (sustituye a MARGEN_VALUE donde se sabe el
+# mercado). Los usan Value Bets (🟢) y el vigia. El resultado exacto no
+# tiene margen: nunca se marca 🟢.
+MARGENES_VALUE = {
+    "ganador": 0.06,
+    "total_legs": 0.08,
+    "handicap": 0.05,
+    "180s": 0.05,       # lineas de 180s y "quien hace mas 180s"
+}
+
 # Por debajo de estos partidos jugados se avisa de que los datos del jugador
 # son poco fiables (no cambia los calculos).
 MUESTRA_MIN_PARTIDOS = 6
