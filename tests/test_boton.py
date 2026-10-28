@@ -142,7 +142,7 @@ def test_marcador_sin_cuotas_avisa_y_no_envia(tmp_path):
     sin_cuotas = _estado()
     sin_cuotas["odds"] = {}
     res = _ejecutar(tmp_path, ws.html(sin_cuotas))
-    assert res["url"] is None and "ninguna cuota" in res["alerta"]
+    assert res["url"] is None and "no encuentro las cuotas" in res["alerta"]
 
 
 PAGINAS_REALES = sorted((RAIZ / "tests" / "fixtures").glob("winamax_*.htm*"))
@@ -160,3 +160,45 @@ def test_pagina_real_guardada(tmp_path, ruta):
     d = decodificar(parse_qs(urlparse(res["url"]).query)["wm"][0])
     tipos = {s["sel"]["tipo"] for s in preparar(d, [d["c1"], d["c2"]])["selecciones"]}
     assert "ganador" in tipos
+
+
+FIXTURES = RAIZ / "tests" / "fixtures"
+
+
+def _cuotas_ganador(d):
+    return [s["cuota"] for m in d["mercados"] if m["titulo"] == "Ganador" for s in m["salidas"]]
+
+
+@necesita_navegador
+def test_llegando_navegando_lee_la_pantalla(tmp_path):
+    """Sin estado de la pagina (has entrado al partido navegando dentro de
+    Winamax): lee lo que se ve en pantalla, sin recargar."""
+    html = (FIXTURES / "winamax_pantalla_modus.html").read_text(encoding="utf-8")
+    res = _ejecutar(tmp_path, html, url="https://www.winamax.es/apuestas-deportivas/match/75997616")
+    assert res["alerta"] is None
+    d = decodificar(parse_qs(urlparse(res["url"]).query)["wm"][0])
+    assert (d["c1"], d["c2"], d["f"], d["id"]) == ("Derek Coulson", "Andy Baetens", "pantalla", "75997616")
+    assert _cuotas_ganador(d) == [1.46, 2.5]
+    r = preparar(d, ["Derek Coulson", "Andy Baetens"], cartel=[("Derek Coulson", "Andy Baetens")])
+    tipos = {s["sel"]["tipo"] for s in r["selecciones"]}
+    assert {"ganador", "handicap", "mas_180", "180_total", "180_jugador"} <= tipos
+
+
+@necesita_navegador
+def test_la_pantalla_manda_sobre_el_estado_de_carga(tmp_path):
+    """Pagina cargada hace rato: el estado dice 1,48 pero en pantalla ya
+    pone 1,46. Manda la pantalla, y el estado completa lo que no se ve."""
+    pantalla = (FIXTURES / "winamax_pantalla_modus.html").read_text(encoding="utf-8")
+    estado = (FIXTURES / "winamax_partido_modus.html").read_text(encoding="utf-8")
+    script = estado[estado.index("<script"):estado.index("</script>") + 9]
+    html = pantalla.replace("</body>", script + "</body>")
+    res = _ejecutar(tmp_path, html, url="https://www.winamax.es/apuestas-deportivas/match/75997616")
+    d = decodificar(parse_qs(urlparse(res["url"]).query)["wm"][0])
+    assert d["f"] == "pagina"
+    assert _cuotas_ganador(d) == [1.46, 2.5]
+    titulos = [m["titulo"] for m in d["mercados"]]
+    assert "1er set - Marcador exacto (en legs)" in titulos      # solo en el estado
+    assert titulos.index("1er set - Hándicap de legs") < titulos.index("Hándicap de legs")
+    r = preparar(d, ["Derek Coulson", "Andy Baetens"])
+    h = [s for s in r["selecciones"] if s["sel"] == {"tipo": "handicap", "jugador": 1, "linea": -1.5}]
+    assert h[0]["cuota"] == 2.0                                   # la de pantalla

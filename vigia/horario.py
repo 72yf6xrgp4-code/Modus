@@ -8,9 +8,11 @@ Ventanas (las jornadas de INICIOS_JORNADAS, con margen para avisar antes):
     sabado              20:10 - 03:00   (Final 20:40)
 De 00:00 a 03:00 cuenta como la jornada del dia anterior.
 
-Los partidos no tienen hora fija: empiezan uno detras de otro. La hora se
-estima con la duracion media (10 min) desde el inicio de la jornada o desde
-el ultimo partido que la hoja muestra empezado o terminado.
+Los partidos no tienen hora fija: empiezan uno detras de otro, y Winamax
+publica sus mercados poco antes. Por eso se avisa de un partido cuando pasa
+a ser el SIGUIENTE: al terminar el anterior de su jornada (segun la hoja).
+El primero de la jornada, y cualquiera que traiga hora, se avisa unos
+minutos antes de esa hora (AVISO_MIN_ANTES).
 """
 
 from datetime import datetime, timedelta
@@ -73,34 +75,24 @@ def inicio_jornada(nombre, dia):
     return None
 
 
-def estimar_inicios(partidos, inicio, ahora, vistos_en_juego, duracion_min=10):
-    """Hora estimada de los partidos pendientes de una jornada.
+def toca_avisar(partidos, idx, inicio, ahora, min_antes=10):
+    """(avisar, hora) para el partido partidos[idx] de una jornada.
 
-    partidos: lista en orden de juego con 'orden' y 'estado' ('pendiente',
-              'en_juego' o 'terminado'), como modelo.datos.partidos_de_jornada.
-    inicio:   hora de inicio de la jornada.
-    vistos_en_juego: {orden: datetime} cuando se vio cada partido en juego
-              por primera vez.
-    Devuelve {orden: datetime} solo de los pendientes posteriores al ultimo
-    partido empezado.
+    partidos: lista en orden de juego con 'estado' ('pendiente', 'en_juego'
+              o 'terminado') y, si el calendario la trae, 'hora' (datetime).
+    inicio:   hora de inicio de la jornada (hora del primer partido).
+    Se avisa de un partido pendiente:
+      - cuando el partido anterior de la jornada ha terminado, o
+      - si tiene hora (el primero de la jornada: la de inicio), cuando
+        faltan min_antes minutos o menos.
+    hora es la hora conocida del partido o None (no tiene hora fija).
     """
-    dur = timedelta(minutes=duracion_min)
-    empezados = [p for p in partidos if p["estado"] != "pendiente"]
-    if not empezados:
-        t = max(inicio, ahora)
-        ultimo = -1
-    else:
-        u = empezados[-1]
-        ultimo = u["orden"]
-        if u["estado"] == "en_juego":
-            visto = vistos_en_juego.get(u["orden"], ahora)
-            t = max(ahora, visto + dur)
-        else:
-            t = ahora
-        t = max(t, inicio)
-    salida = {}
-    for p in partidos:
-        if p["orden"] > ultimo and p["estado"] == "pendiente":
-            salida[p["orden"]] = t
-            t = t + dur
-    return salida
+    p = partidos[idx]
+    hora = p.get("hora") or (inicio if idx == 0 else None)
+    if p["estado"] != "pendiente":
+        return False, hora
+    if hora is not None and ahora >= hora - timedelta(minutes=min_antes):
+        return True, hora
+    if idx > 0 and partidos[idx - 1]["estado"] == "terminado":
+        return True, hora
+    return False, hora

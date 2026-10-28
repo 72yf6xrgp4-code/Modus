@@ -56,6 +56,9 @@ def decodificar(wm):
     return {"id": str(d.get("id") or ""), "c1": str(d["c1"]).strip(),
             "c2": str(d["c2"]).strip(), "t": int(d.get("t") or 0),
             "s": str(d.get("s") or ""), "h": int(d.get("h") or 0),
+            # "pagina": estado de la pagina + cuotas al dia de la pantalla;
+            # "pantalla": solo lo que se veia (llegaste navegando)
+            "f": str(d.get("f") or "pagina"),
             "mercados": mercados}
 
 
@@ -130,4 +133,14 @@ def casilla(sel):
         return None
     if t == "mas_180":
         return {1: "mas_j1", 0: "mas_emp", 2: "mas_j2"}[sel["quien"]]
+    return None
+
+
+def seleccion_de_casilla(key):
+    """Inversa de casilla(): la seleccion del modelo de una casilla de cuota
+    de Value Bets ('vic_j1', 'hcap_j2_neg_15'...), o None."""
+    from vigia.cuotas import selecciones
+    for sel in selecciones():
+        if casilla(sel) == key:
+            return sel
     return None

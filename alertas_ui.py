@@ -25,6 +25,8 @@ from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, AVISO_APUESTA,
                             ESTADO_NO_APOSTADA, ESTADO_PENDIENTE,
                             filas_a_dicts, gastado_del_dia, num,
                             resumen_apuestas, beneficio_fila)
+from vigia.registro import (beneficio_real, por_mercado, por_mercado_y_volatilidad,
+                            tope_del_dia)
 from vigia.reglas import TOPE_DIARIO
 
 
@@ -78,17 +80,24 @@ def anadir_alerta(fila):
     return True, ""
 
 
-def _marcar(fila, estado):
+def marcar_estado(fila, estado):
+    """Cambia la celda 'estado' de una alerta. (ok, error)"""
     ws, err = _hoja_alertas()
     if ws is None:
-        st.error(err)
-        return
+        return False, err
     try:
         ws.update_cell(fila["_fila"], COLUMNAS_ALERTAS.index("estado") + 1, estado)
     except Exception as e:
-        st.error(f"No se pudo guardar: {e}")
-        return
+        return False, str(e)
     cargar_alertas.clear()
+    return True, ""
+
+
+def _marcar(fila, estado):
+    ok, error = marcar_estado(fila, estado)
+    if not ok:
+        st.error(f"No se pudo guardar: {error}")
+        return
     st.rerun()
 
 
@@ -132,7 +141,7 @@ def _tarjeta(f):
 
 
 def render_alertas():
-    st.caption("Apuestas apuntadas desde Value Bets con el botón «Modus value». "
+    st.caption("Apuestas marcadas en Value Bets («La he apostado» / «No la apuesto»). "
                "Se actualiza al pulsar **Actualizar** (o solo, cada minuto como mucho).")
     if not es_admin():
         st.info("🔒 Las alertas solo se ven en modo administrador.")
@@ -148,10 +157,13 @@ def render_alertas():
     de_hoy = [f for f in filas if f.get("fecha") == hoy]
     gastado = gastado_del_dia(filas, hoy)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Avisos hoy", len(de_hoy))
-    c2.metric("Tope gastado", _eur(gastado), help=f"Tope diario: {_eur(TOPE_DIARIO)}")
-    c3.metric("Queda", _eur(max(0.0, TOPE_DIARIO - gastado)))
-    st.progress(min(1.0, gastado / TOPE_DIARIO) if TOPE_DIARIO else 0.0)
+    c1.metric("Apuestas hoy", len(de_hoy))
+    tope = tope_del_dia(filas)
+    c2.metric("Tope gastado", _eur(gastado),
+              help=f"Tope de hoy: {_eur(tope)} = {_eur(TOPE_DIARIO)} + tu beneficio "
+                   f"real acumulado ({_eur(beneficio_real(filas))}, si es positivo)")
+    c3.metric("Queda", _eur(max(0.0, tope - gastado)))
+    st.progress(min(1.0, gastado / tope) if tope else 0.0)
 
     st.subheader("Hoy")
     if not de_hoy:
@@ -183,6 +195,7 @@ def render_alertas():
             if b2.button("❌ No apostada", key=f"al_no_{f['_fila']}"):
                 _marcar(f, ESTADO_NO_APOSTADA)
     _evolucion(filas)
+    _por_mercado(filas)
     if anteriores:
         with st.expander(f"📋 Todas las alertas anteriores ({len(anteriores)})"):
             st.dataframe(_tabla(anteriores), use_container_width=True, hide_index=True)
@@ -233,14 +246,66 @@ def _evolucion(filas):
     evol.columns = ["Si las hubieras hecho todas", "Las que apostaste"]
     st.markdown("**Beneficio acumulado (€)**")
     st.line_chart(evol, height=240)
-    por_mercado = df.groupby("mercado").agg(
-        apuestas=("ganada", "size"), aciertos=("ganada", "sum"),
-        apostado=("importe", "sum"), beneficio=("todas", "sum"))
-    por_mercado["beneficio"] = por_mercado["beneficio"].round(2)
-    por_mercado["ROI %"] = (100 * por_mercado["beneficio"]
-                            / por_mercado["apostado"]).round(1)
-    st.markdown("**Por mercado (todas las apuntadas)**")
-    st.dataframe(por_mercado, use_container_width=True)
+
+
+def _tabla_mercados(grupos):
+    """DataFrame del seguimiento por mercado (todas / las que apostaste)."""
+    def pct(v):
+        return "—" if v is None else f"{v*100:.1f} %".replace(".", ",")
+    filas = []
+    for g in grupos:
+        t, r = g["todas"], g["reales"]
+        filas.append({
+            "Mercado": g["mercado"],
+            "Apuestas": t["n"], "Liquidadas": t["liq"], "Acierto": pct(t["acierto"]),
+            "Apostado": _eur(t["apostado"]), "Beneficio": _eur(t["beneficio"]),
+            "ROI": pct(t["roi"]),
+            "Apostadas de verdad": r["liq"], "Beneficio real": _eur(r["beneficio"]),
+            "ROI real": pct(r["roi"]),
+        })
+    return pd.DataFrame(filas)
+
+
+def _por_mercado(filas):
+    """Seguimiento de cada mercado por separado, sin y con volatilidad."""
+    if not any(f.get("tipo_aviso") == AVISO_APUESTA for f in filas):
+        return
+    st.markdown("#### 📊 Seguimiento por mercado")
+    sin_vol, con_vol = st.tabs(["Sin volatilidad", "Con volatilidad"])
+    with sin_vol:
+        st.caption("Cada mercado por separado, sin tener en cuenta la volatilidad. "
+                   "«Apuestas» son todas las que tuvieron value (las hicieras o no), con "
+                   "su importe; «real» solo las que marcaste como apostadas.")
+        grupos, _ = por_mercado(filas)
+        st.dataframe(_tabla_mercados(grupos), use_container_width=True, hide_index=True)
+    with con_vol:
+        st.caption("Lo mismo aplicando la regla de volatilidad del vigía: con volatilidad "
+                   "alta se exige más edge (+2 puntos por punto por encima de 12) y el "
+                   "importe baja un escalón; con más de 18 o sin dato, la apuesta no "
+                   "cuenta. Compáralo con la otra pestaña para ver si la regla compensa.")
+        grupos, excluidas = por_mercado(filas, con_volatilidad=True)
+        if grupos:
+            st.dataframe(_tabla_mercados(grupos), use_container_width=True, hide_index=True)
+        if excluidas:
+            st.caption(f"Apuestas que la regla habría descartado (o sin dato de "
+                       f"volatilidad): {excluidas}.")
+        st.markdown("**Por nivel de volatilidad del partido** (todas las apuestas con value)")
+        niveles = por_mercado_y_volatilidad(filas)
+        orden = ["baja/media", "alta", "sin dato"]
+        tabla = []
+        for mercado in sorted({m for m, _ in niveles}):
+            fila = {"Mercado": mercado}
+            for nivel in orden:
+                g = niveles.get((mercado, nivel))
+                if not g or not g["liq"]:
+                    fila[nivel] = "—"
+                else:
+                    roi = "—" if g["roi"] is None else f"{g['roi']*100:+.0f} %"
+                    fila[nivel] = (f"{g['ganadas']}/{g['liq']} · ROI {roi}").replace(".", ",")
+            tabla.append(fila)
+        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
+        st.caption("Cada casilla: ganadas / liquidadas · ROI. El nivel es el del jugador "
+                   "más irregular del partido.")
 
 
 def _instalar_boton():

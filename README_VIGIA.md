@@ -2,9 +2,11 @@
 
 Dos piezas, ninguna pide nada a Winamax:
 
-1. **Vigía (portátil Windows).** Durante las jornadas lee el calendario y los
-   datos de la hoja (la misma «Forma reciente» que Value Bets). Entre 30 y 45
-   minutos antes de cada partido calcula, para cada mercado del modelo, la
+1. **Vigía (portátil Windows).** Durante las jornadas lee los datos de la hoja
+   (la misma «Forma reciente» que Value Bets) y, cada minuto, el estado de los
+   partidos por la API de Google. Cuando un partido pasa a ser **el siguiente**
+   (termina el anterior de su jornada; el primero, 10 minutos antes de que
+   empiece la jornada) calcula, para cada mercado del modelo, la
    **cuota mínima** a partir de la cual habría value. La apunta en la pestaña
    `cuotas_minimas` del Sheet y te manda un aviso al móvil (ntfy). Al tocar el
    aviso se abre la app con el partido elegido. También apunta el resultado
@@ -51,7 +53,7 @@ Comprueba:
 python -m pytest                 # todas bien (alguna saltada si no hay Node)
 python -m vigia --probar-aviso   # llega un aviso; al tocarlo se abre la app
 python -m vigia --liquidar       # conecta con Google y crea la pestaña cuotas_minimas
-python -m vigia --ver            # partidos de hoy, hora estimada y cuotas mínimas
+python -m vigia --ver            # partidos de hoy, cuándo se avisará de cada uno y cuotas mínimas
 ```
 
 Cuando todo vaya bien, crea las tareas (de una vez):
@@ -91,9 +93,11 @@ app: 🔔 Alertas → «Instalar el botón Modus value», con botón de copiar.
    escribe `Modus value` y elige el marcador (o ábrelo desde *Marcadores*).
 
 Si Winamax cambia su página o no encuentra las cuotas, el botón lo dice
-(«no encuentro las cuotas…») y no envía nada. Si han pasado minutos desde que
-abriste el partido, recarga la página antes de pulsarlo: el botón lee las
-cuotas que trae la página al cargarse.
+(«no encuentro las cuotas…») y no envía nada. No hace falta recargar: lee las
+cuotas que se ven en pantalla (siempre al día) y, si la página se cargó en ese
+mismo partido, completa con ella los mercados que no se ven. Winamax solo
+pinta los mercados cercanos a la pantalla: si llegaste navegando y falta
+alguno, desplázate hasta verlo y vuelve a pulsar.
 
 **Prueba con una página guardada:** guarda la página de un partido con
 `Ctrl+S` (*Página web, completa*) como `tests\fixtures\winamax_partido.html` y
@@ -105,20 +109,30 @@ pásame el archivo.
 
 | Regla | Valor |
 |---|---|
-| Partido válido | los dos jugadores con volatilidad baja o media (alto o sin dato → se descarta y se anota en `vigia_log`) |
-| Value | edge = p × cuota − 1 ≥ 10 % |
+| Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 20 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 22 %, 15 → 26 %, 17 → 30 %) y el importe baja un escalón (15 → 10 €, 10 → 5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` (en los **avisos del vigía**; para **apuntar en la app** la volatilidad no cuenta: siempre 20 % e importe normal, solo se muestra como información) |
+| Value | edge = p × cuota − 1 ≥ el mínimo exigido (20 %, o más con volatilidad alta) |
 | 🟢 | p − 1/cuota ≥ margen del mercado (`MARGEN_POR_MERCADO` de `config.py`: ganador 6, total de legs 8, hándicaps y 180s 5). Resultado exacto nunca 🟢 |
-| Importe | edge 10–15 % → 2,5 €; 15–20 % → 5 €; ≥ 20 % → 7,5 €. Más de 2,5 € solo si 🟢 y cuota ≤ 4,00 |
+| Importe | edge 20–35 % → 5 €; 35–50 % → 10 €; más del 50 % → 15 €. Más de 5 € solo si 🟢 y cuota ≤ 4,00 |
 | Por partido | una apuesta como máximo (las marcadas «no apostada» no cuentan) |
-| Tope | 50 € por jornada, recortando en múltiplos de 2,5; una «no apostada» devuelve su importe |
+| Tope | 50 € por jornada más tu beneficio real acumulado (las apuestas marcadas «apostada» ya liquidadas; si vas en pérdidas, 50 €). Se recorta en múltiplos de 5 €; una «no apostada» devuelve su importe |
 | Margen > 20 puntos | «⚠️ REVISAR», sin importe |
 
 **Cuotas mínimas** (pestaña `cuotas_minimas`): cuota justa = 1/p; para avisar
-(edge 10 %) = 1,10/p; para 5 € = 1,15/p; para 7,5 € = 1,20/p; para 🟢 =
-1/(p − margen). Siempre se redondean **hacia arriba**: con p = 0,742 la de
-avisar es 1,49, no 1,48, porque a 1,48 el edge sería 9,8 %.
+(edge 20 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,20/p;
+para 10 € = 1,35/p; para 15 € = 1,50/p; para 🟢 = 1/(p − margen). Siempre se
+redondean **hacia arriba** (con p = 0,742, la de avisar es 1,62).
 
-**Hora de los partidos:** la hoja no la tiene; empiezan uno tras otro.
-Se estima con 10 minutos por partido, desde el inicio de la jornada o desde
-el último partido que la hoja muestra empezado o terminado, y se recalcula
-cada 5 minutos. Por eso el aviso dice «~12:40».
+**Cuándo avisa el vigía:** los partidos no tienen hora fija (empiezan uno tras
+otro) y Winamax publica sus mercados poco antes. Por eso avisa de cada partido
+cuando pasa a ser el siguiente: en cuanto la hoja marca como terminado el
+anterior de su jornada («🎯 Siguiente: …»). El primero de cada jornada, y
+cualquiera que traiga hora en el calendario, se avisa `AVISO_MIN_ANTES`
+minutos antes (10 por defecto; «🎯 14:00 …»). Un solo aviso por partido,
+aunque se retrase. El estado se lee cada minuto por la API de Google con la
+cuenta de servicio (el CSV publicado va con minutos de retraso) y solo dentro
+de las ventanas de jornada; si la API fallara, usa el CSV y lo anota en el log.
+
+**Seguimiento por mercado** (🔔 Alertas → Histórico): cada mercado por
+separado, **sin volatilidad** (todas las apuestas con value y las que hiciste)
+y **con volatilidad** (aplicando la regla del vigía y por nivel de volatilidad
+del partido), para ver en qué mercados y con qué volatilidad gana el modelo.

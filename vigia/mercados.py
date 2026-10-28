@@ -66,18 +66,30 @@ def _linea(*textos):
 
 def tipo_mercado(titulo):
     """Clasifica el titulo de la apuesta: 'ganador', 'handicap',
-    'total_legs', 'resultado', '180', o None (no reconocido)."""
+    'total_legs', 'resultado', '180', 'hcap_180', o None (no reconocido).
+
+    Titulos reales de winamax.es (dardos, Modus): 'Ganador', 'Numero de
+    legs', 'Handicap de legs', '1er set - Marcador exacto (en legs)',
+    'Mas 180', 'Handicap de 180 realizados', 'Total 180',
+    'D. Coulson Total 180'. En Modus el partido es UN set (primero a 4
+    legs), asi que el marcador exacto del 1er set es el del partido."""
     t = normalizar_nombre(titulo)
     if not t:
         return None
-    # Mercados que NO son del partido completo: fuera
-    if re.search(r"\b(set|leg [0-9]|1er leg|primer leg|leg 1|checkout|"
-                 r"par impar|impar|primer 180|primero)\b", t):
+    # En Modus el partido es un solo set: "1er set - Handicap de legs" es el
+    # handicap del partido. (Los de "1er set - 1er leg - ..." caen abajo.)
+    t = re.sub(r"^(1er|primer) set ", "", t)
+    # Mercados de una leg concreta, de quien hace el primer 180, checkouts...
+    # no los cubre el modelo: fuera
+    if re.search(r"(\b\d+\S* leg\b|\bprimera? leg\b|\bleg \d|checkout|impar|"
+                 r"1er jugador|primer jugador|\banota\b|primer 180|\bprimero\b)", t):
         return None
-    if "180" in t:
-        return "180"
     if "exact" in t or "marcador" in t or "correct score" in t:
         return "resultado"
+    if re.search(r"\bsets?\b", t):      # otros mercados por sets: fuera
+        return None
+    if "180" in t:
+        return "hcap_180" if "handicap" in t else "180"
     if "handicap" in t:
         return "handicap"
     if "leg" in t and ("total" in t or "mas" in t or "menos" in t
@@ -153,6 +165,18 @@ def asignar(titulo, label, code, nombres, invertido):
             a, b = b, a
         return {"tipo": "resultado", "legs1": a, "legs2": b}, "Resultado exacto"
 
+    if tipo == "hcap_180":
+        # 'D. Coulson +0.5' = Coulson hace mas 180s o empatan;
+        # 'A. Baetens -0.5' = Baetens hace mas. Solo lineas +-0,5 (el
+        # modelo da "quien hace mas", no la diferencia exacta).
+        q = _quien(label, nombres)
+        m = re.search(_NUM + r"\s*\)?\s*$", label)
+        h = _num(m.group(1)) if m else None
+        if q is None or h is None or abs(abs(h) - 0.5) > 1e-9:
+            return None
+        return ({"tipo": "hcap_180", "jugador": a_cartel(q), "linea": h},
+                "Hándicap 180s")
+
     if tipo == "180":
         lado = _lado(label)
         linea = _linea(label, titulo)
@@ -209,4 +233,6 @@ def texto_seleccion(sel, j1, j2):
         return f"{lado} de {str(sel['linea']).replace('.', ',')} 180s"
     if t == "mas_180":
         return "Empate en 180s" if sel["quien"] == 0 else f"Más 180s {nom[sel['quien']]}"
+    if t == "hcap_180":
+        return f"Hándicap 180s {nom[sel['jugador']]} {num(sel['linea'])}"
     return str(sel)

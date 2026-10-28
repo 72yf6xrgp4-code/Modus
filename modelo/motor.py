@@ -304,6 +304,8 @@ def probabilidad(calc, sel):
       180_jugador  jugador, lado, linea
       180_total    lado, linea
       mas_180      quien (1 = J1, 0 = empate, 2 = J2)
+      hcap_180     jugador, linea (+0.5 = hace mas 180s o empata;
+                   -0.5 = hace mas)
     Devuelve None si el tipo no se reconoce.
     """
     t = sel["tipo"]
@@ -324,4 +326,12 @@ def probabilidad(calc, sel):
     if t == "mas_180":
         pj1, pemp, pj2 = calc["mas_180"]
         return {1: pj1, 0: pemp, 2: pj2}[sel["quien"]]
+    if t == "hcap_180":
+        pj1, pemp, pj2 = calc["mas_180"]
+        pj = pj1 if sel["jugador"] == 1 else pj2
+        if sel["linea"] == 0.5:
+            return sanitize_prob(pj + pemp)
+        if sel["linea"] == -0.5:
+            return pj
+        return None
     return None

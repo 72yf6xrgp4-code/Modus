@@ -5,13 +5,14 @@ from vigia import cuotas, reglas
 
 
 def test_ejemplo_del_encargo():
-    # p = 0,742: 1,10/p = 1,4825 -> 1,49 (redondeo hacia arriba: con 1,48
-    # el edge seria 9,8 %); 🟢 ganador = 1/(0,742-0,06) = 1,466 -> 1,47
+    # p = 0,742: 1,20/p = 1,617 -> 1,62 (redondeo hacia arriba);
+    # 🟢 ganador = 1/(0,742-0,06) = 1,466 -> 1,47
     c = reglas.cuotas_minimas("ganador", 0.742)
-    assert c["aviso"] == 1.49
+    assert reglas.cuota_minima(0.742, 0.10) == 1.49      # el ejemplo original (10 %)
+    assert c["aviso"] == 1.62
     assert c["verde"] == 1.47
     assert c["justa"] == 1.35
-    assert c["eur_5"] == 1.55 and c["eur_7_5"] == 1.62
+    assert c["eur_10"] == 1.82 and c["eur_15"] == 2.03   # 1,35/p y 1,50/p
 
 
 def test_la_cuota_minima_cumple_la_regla():
@@ -36,12 +37,12 @@ def test_verde_por_mercado():
 def test_tabla_de_un_partido():
     calc = calcular_partido({"PR": 62, "lam_180": 1.2}, {"PR": 55, "lam_180": 0.9})
     filas = cuotas.tabla(calc, "Andy Baetens", "Cameron Menzies")
-    assert len(filas) == len(cuotas.selecciones()) == 49
+    assert len(filas) == len(cuotas.selecciones()) == 51
     tipos = {f["sel"]["tipo"] for f in filas}
     assert tipos == {"ganador", "handicap", "total_legs", "resultado",
-                     "180_jugador", "180_total", "mas_180"}
+                     "180_jugador", "180_total", "mas_180", "hcap_180"}
     for f in filas:
-        assert f["aviso"] == reglas.cuota_minima(f["p"], 0.10)
+        assert f["aviso"] == reglas.cuota_minima(f["p"], reglas.EDGE_MIN)
         if f["mercado"] == "resultado":
             assert f["verde"] is None
     partes = cuotas.resumen_aviso(filas, "Andy Baetens", "Cameron Menzies")

@@ -9,6 +9,7 @@ con su cabecera si no existen.
 """
 
 import logging
+import re
 
 from vigia.registro import (HOJA_ALERTAS, HOJA_LOG, HOJA_CUOTAS,
                             COLUMNAS_ALERTAS, COLUMNAS_LOG, COLUMNAS_CUOTAS,
@@ -18,14 +19,18 @@ log = logging.getLogger(__name__)
 
 
 class HojaGoogle:
-    def __init__(self, ruta_credenciales, sheet_id):
+    def __init__(self, ruta_credenciales, sheet_id, sheet_id_datos=""):
         import gspread
         from google.oauth2.service_account import Credentials
         scopes = ["https://www.googleapis.com/auth/spreadsheets",
                   "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_file(ruta_credenciales,
                                                       scopes=scopes)
-        self.libro = gspread.authorize(creds).open_by_key(sheet_id)
+        self.cliente = gspread.authorize(creds)
+        self.libro = self.cliente.open_by_key(sheet_id)
+        self._sheet_id_datos = sheet_id_datos or sheet_id
+        self._libro_datos = None
+        self._ws_jornadas = {}
         self.ws_alertas = self._pestana(HOJA_ALERTAS, COLUMNAS_ALERTAS)
         self.ws_log = self._pestana(HOJA_LOG, COLUMNAS_LOG)
         self.ws_cuotas = self._pestana(HOJA_CUOTAS, COLUMNAS_CUOTAS)
@@ -39,9 +44,33 @@ class HojaGoogle:
                                           cols=len(columnas))
             ws.append_row(columnas)
             return ws
-        if not ws.row_values(1):
+        cabecera = ws.row_values(1)
+        if not cabecera:
             ws.append_row(columnas)
+        elif cabecera != columnas:
+            # Version nueva (columnas anadidas o renombradas): cabecera nueva
+            log.warning("Actualizo la cabecera de %s: %s", nombre, columnas)
+            if ws.col_count < len(columnas):
+                ws.add_cols(len(columnas) - ws.col_count)
+            ws.update(range_name="A1", values=[columnas])
         return ws
+
+    def leer_jornada(self, jornada):
+        """Filas de una pestana de jornada por la API (al momento; el CSV
+        publicado va con minutos de retraso). Misma forma que
+        modelo.datos.descargar_lineas. La pestana se busca por su gid."""
+        ws = self._ws_jornadas.get(jornada)
+        if ws is None:
+            from config import URLS
+            m = re.search(r"gid=(\d+)", URLS.get(jornada, ""))
+            if not m:
+                raise ValueError(f"no se el gid de la pestana {jornada}")
+            if self._libro_datos is None:
+                self._libro_datos = (self.libro if self._sheet_id_datos == self.libro.id
+                                     else self.cliente.open_by_key(self._sheet_id_datos))
+            ws = self._libro_datos.get_worksheet_by_id(int(m.group(1)))
+            self._ws_jornadas[jornada] = ws
+        return ws.get_all_values()
 
     def alertas(self):
         return filas_a_dicts(self.ws_alertas.get_all_values())
@@ -119,6 +148,9 @@ class HojaSoloLectura:
 
     def alertas(self):
         return self._hoja.alertas() + self._memoria.alertas()
+
+    def leer_jornada(self, jornada):
+        return self._hoja.leer_jornada(jornada)
 
     def anadir_alerta(self, fila):
         self._memoria.anadir_alerta(fila)

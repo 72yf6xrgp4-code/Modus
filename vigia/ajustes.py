@@ -35,10 +35,12 @@ class Ajustes:
     app_url: str = "https://modusapp.streamlit.app"
     tope_diario: float = 50.0
     recarga_datos_seg: int = 300
-    # Duracion media de un partido (no tienen hora fija: empiezan seguidos)
-    duracion_partido_min: int = 10
-    # Se avisa cuando faltan como mucho estos minutos (entre 30 y 45)
-    aviso_min_antes: int = 45
+    # Partidos con hora conocida (el primero de cada jornada): se avisa
+    # estos minutos antes. El resto, al terminar el partido anterior.
+    aviso_min_antes: int = 10
+    # Sheet con las pestanas de jornada (para leer el estado de los
+    # partidos por la API, al momento). Por defecto, el mismo SHEET_ID.
+    sheet_id_datos: str = ""
 
 
 def cargar_ajustes():
@@ -56,6 +58,6 @@ def cargar_ajustes():
         app_url=e("APP_URL", "https://modusapp.streamlit.app").rstrip("/"),
         tope_diario=float(e("TOPE_DIARIO", "50").replace(",", ".")),
         recarga_datos_seg=int(e("RECARGA_DATOS_SEG", "300")),
-        duracion_partido_min=int(e("DURACION_PARTIDO_MIN", "10")),
-        aviso_min_antes=int(e("AVISO_MIN_ANTES", "45")),
+        aviso_min_antes=int(e("AVISO_MIN_ANTES", "10")),
+        sheet_id_datos=e("SHEET_ID_DATOS", ""),
     )

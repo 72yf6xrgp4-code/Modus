@@ -11,6 +11,7 @@ NOMBRE_MERCADO = {
     "ganador": "Ganador", "handicap": "Hándicap", "total_legs": "Total de legs",
     "resultado": "Resultado exacto", "180_jugador": "180s jugador",
     "180_total": "180s totales", "mas_180": "Más 180s",
+    "hcap_180": "Hándicap 180s",
 }
 
 
@@ -27,11 +28,13 @@ def selecciones():
     sel += [{"tipo": "180_total", "lado": lado, "linea": l}
             for l in (0.5, 1.5, 2.5) for lado in ("mas", "menos")]
     sel += [{"tipo": "mas_180", "quien": q} for q in (1, 0, 2)]
+    sel += [{"tipo": "hcap_180", "jugador": j, "linea": 0.5} for j in (1, 2)]
     return sel
 
 
-def tabla(calc, j1, j2):
-    """Filas con p, cuota justa y cuotas minimas de cada seleccion."""
+def tabla(calc, j1, j2, edge_min=reglas.EDGE_MIN, rebaja=False):
+    """Filas con p, cuota justa y cuotas minimas de cada seleccion (con el
+    edge exigido y la rebaja de importe de reglas.requisito_volatilidad)."""
     filas = []
     for sel in selecciones():
         p = probabilidad(calc, sel)
@@ -40,7 +43,7 @@ def tabla(calc, j1, j2):
             "sel": sel, "mercado": mercado,
             "nombre_mercado": NOMBRE_MERCADO[sel["tipo"]],
             "texto": texto_seleccion(sel, j1, j2), "p": p,
-            **reglas.cuotas_minimas(mercado, p),
+            **reglas.cuotas_minimas(mercado, p, edge_min, rebaja),
         })
     return filas
 
@@ -67,3 +70,31 @@ def resumen_aviso(filas, j1, j2):
     return [f"Gana {ape} ≥{_num(ganador['aviso'])}",
             f"{ape} −1,5 ≥{_num(hcap['aviso'])}",
             f"{lado} 5,5 legs ≥{_num(legs['aviso'])}"]
+
+
+def evaluar_cuotas(calc, cuotas_sel, j1, j2):
+    """Evalua con tus reglas una lista de cuotas [(sel, cuota, origen)].
+
+    Para APUNTAR la volatilidad no cuenta (20 % de edge e importe normal).
+    Si la misma seleccion llega dos veces (casilla y boton), manda la
+    primera. Devuelve filas ordenadas por edge con sel, texto,
+    nombre_mercado, cuota, p, justa, ev (de reglas.evaluar) y origen.
+    """
+    import json
+    vistas, filas = set(), []
+    for sel, cuota, origen in cuotas_sel:
+        k = json.dumps(sel, sort_keys=True)
+        if k in vistas or not cuota or cuota <= 1:
+            continue
+        vistas.add(k)
+        p = probabilidad(calc, sel)
+        if p is None:
+            continue
+        mercado = reglas.MERCADO_DE_TIPO[sel["tipo"]]
+        filas.append({"sel": sel, "clave": k, "texto": texto_seleccion(sel, j1, j2),
+                      "nombre_mercado": NOMBRE_MERCADO[sel["tipo"]],
+                      "cuota": float(cuota), "p": p, "justa": 1.0 / p,
+                      "ev": reglas.evaluar(mercado, p, float(cuota)),
+                      "origen": origen})
+    filas.sort(key=lambda f: f["ev"]["edge"], reverse=True)
+    return filas
