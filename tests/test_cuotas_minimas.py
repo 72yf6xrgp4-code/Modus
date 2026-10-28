@@ -36,10 +36,10 @@ def test_verde_por_mercado():
 def test_tabla_de_un_partido():
     calc = calcular_partido({"PR": 62, "lam_180": 1.2}, {"PR": 55, "lam_180": 0.9})
     filas = cuotas.tabla(calc, "Andy Baetens", "Cameron Menzies")
-    assert len(filas) == len(cuotas.selecciones()) == 49
+    assert len(filas) == len(cuotas.selecciones()) == 51
     tipos = {f["sel"]["tipo"] for f in filas}
     assert tipos == {"ganador", "handicap", "total_legs", "resultado",
-                     "180_jugador", "180_total", "mas_180"}
+                     "180_jugador", "180_total", "mas_180", "hcap_180"}
     for f in filas:
         assert f["aviso"] == reglas.cuota_minima(f["p"], 0.10)
         if f["mercado"] == "resultado":

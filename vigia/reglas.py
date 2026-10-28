@@ -34,6 +34,7 @@ MERCADO_DE_TIPO = {
     "180_jugador": "180s",
     "180_total": "180s",
     "mas_180": "mas_180",
+    "hcap_180": "mas_180",
 }
 
 
@@ -107,6 +108,9 @@ def acierta(sel, legs1, legs2, t180_1, t180_2):
     if t == "mas_180":
         real = 1 if t180_1 > t180_2 else (2 if t180_2 > t180_1 else 0)
         return real == sel["quien"]
+    if t == "hcap_180":
+        h = sel["linea"]
+        return (t180_1 + h > t180_2) if sel["jugador"] == 1 else (t180_2 + h > t180_1)
     return None
 
 

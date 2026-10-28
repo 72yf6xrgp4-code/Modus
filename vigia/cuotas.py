@@ -11,6 +11,7 @@ NOMBRE_MERCADO = {
     "ganador": "Ganador", "handicap": "Hándicap", "total_legs": "Total de legs",
     "resultado": "Resultado exacto", "180_jugador": "180s jugador",
     "180_total": "180s totales", "mas_180": "Más 180s",
+    "hcap_180": "Hándicap 180s",
 }
 
 
@@ -27,6 +28,7 @@ def selecciones():
     sel += [{"tipo": "180_total", "lado": lado, "linea": l}
             for l in (0.5, 1.5, 2.5) for lado in ("mas", "menos")]
     sel += [{"tipo": "mas_180", "quien": q} for q in (1, 0, 2)]
+    sel += [{"tipo": "hcap_180", "jugador": j, "linea": 0.5} for j in (1, 2)]
     return sel
 
 

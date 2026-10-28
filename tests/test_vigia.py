@@ -72,7 +72,7 @@ def test_un_aviso_por_partido_entre_30_y_45_minutos_antes():
     assert len(texto) < 200
     assert enlace == ("https://modusapp.streamlit.app/?seccion=value"
                       "&j1=Andy%20Baetens&j2=Cameron%20Menzies")
-    assert len(hoja.cuotas) == 49 and hoja.cuotas[0]["j1"] == "Andy Baetens"
+    assert len(hoja.cuotas) == 51 and hoja.cuotas[0]["j1"] == "Andy Baetens"
     # El segundo partido (14:10) entra en la ventana 10 min despues
     reloj.t = datetime(2026, 11, 5, 13, 25, tzinfo=M)
     v.ciclo()

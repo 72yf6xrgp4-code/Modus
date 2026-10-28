@@ -56,3 +56,13 @@ def test_tope():
 ])
 def test_acierta(sel, legs1, legs2, t1, t2, ok):
     assert reglas.acierta(sel, legs1, legs2, t1, t2) is ok
+
+
+def test_hcap_180():
+    from modelo.motor import calcular_partido, probabilidad
+    calc = calcular_partido({"PR": 60, "lam_180": 1.3}, {"PR": 55, "lam_180": 1.0})
+    pj1, pemp, pj2 = calc["mas_180"]
+    assert probabilidad(calc, {"tipo": "hcap_180", "jugador": 1, "linea": 0.5}) == pytest.approx(pj1 + pemp)
+    assert probabilidad(calc, {"tipo": "hcap_180", "jugador": 2, "linea": -0.5}) == pj2
+    assert reglas.acierta({"tipo": "hcap_180", "jugador": 1, "linea": 0.5}, 4, 0, 2, 2) is True
+    assert reglas.acierta({"tipo": "hcap_180", "jugador": 2, "linea": -0.5}, 4, 0, 2, 2) is False
