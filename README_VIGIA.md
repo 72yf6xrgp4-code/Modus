@@ -105,7 +105,7 @@ pásame el archivo.
 
 | Regla | Valor |
 |---|---|
-| Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 10 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 12 %, 15 → 16 %, 17 → 20 %) y el importe baja un escalón (7,5 → 5 €, 5 → 2,5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` |
+| Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 10 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 12 %, 15 → 16 %, 17 → 20 %) y el importe baja un escalón (7,5 → 5 €, 5 → 2,5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` (en los **avisos del vigía**; para **apuntar en la app** la volatilidad no cuenta: siempre 10 % e importe normal, solo se muestra como información) |
 | Value | edge = p × cuota − 1 ≥ el mínimo exigido (10 %, o más con volatilidad alta) |
 | 🟢 | p − 1/cuota ≥ margen del mercado (`MARGEN_POR_MERCADO` de `config.py`: ganador 6, total de legs 8, hándicaps y 180s 5). Resultado exacto nunca 🟢 |
 | Importe | edge 10–15 % → 2,5 €; 15–20 % → 5 €; ≥ 20 % → 7,5 €. Más de 2,5 € solo si 🟢 y cuota ≤ 4,00 |

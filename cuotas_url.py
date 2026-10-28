@@ -136,25 +136,23 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
         st.warning("⚠️ El partido no está en el calendario de la hoja: J1 es el "
                    "primero de Winamax.")
 
-    req = reglas.requisito_volatilidad(j1.get("volatilidad"), j2.get("volatilidad"))
-    ok = req["ok"]
-    v1 = nivel_volatilidad(j1.get("volatilidad")) or "sin datos"
-    v2 = nivel_volatilidad(j2.get("volatilidad")) or "sin datos"
-    edge_min = req["edge_min"] if ok else reglas.EDGE_MIN
-    if not ok:
-        st.error(f"⛔ Partido fuera de tus reglas ({req['motivo']}: {j1_sel} {v1}, "
-                 f"{j2_sel} {v2}). Se muestran las cuotas, pero no se puede apuntar.")
-    elif req["rebaja"]:
-        vol = f"{req['vol']:.1f}".replace(".", ",")
-        st.warning(f"⚠️ Volatilidad alta ({vol}): se exige un {edge_min*100:.0f} % "
-                   "de edge y el importe baja un escalón (7,5 → 5 €, 5 → 2,5 €).")
+    # Para APUNTAR, la volatilidad no cuenta: siempre el edge minimo normal
+    # (10 %) y el importe normal. Solo se muestra como informacion. (El
+    # vigia si la aplica en sus avisos: vigia/reglas.requisito_volatilidad.)
+    edge_min = reglas.EDGE_MIN
+    v1 = nivel_volatilidad(j1.get("volatilidad")) or "sin dato"
+    v2 = nivel_volatilidad(j2.get("volatilidad")) or "sin dato"
+    if "alto" in (v1, v2) or "sin dato" in (v1, v2):
+        st.info(f"ℹ️ Volatilidad: {j1_sel} {v1}, {j2_sel} {v2}. Para apuntar no "
+                "cuenta (10 % de edge e importe normal), pero tenlo en cuenta: "
+                "con volatilidad alta el modelo acierta menos.")
 
     calc = calcular_partido(j1, j2, j1_saca_primero=True)
     filas = []
     for s in w["selecciones"]:
         p = probabilidad(calc, s["sel"])
         mercado = reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]]
-        ev = reglas.evaluar(mercado, p, s["cuota"], edge_min, ok and req["rebaja"])
+        ev = reglas.evaluar(mercado, p, s["cuota"])
         filas.append({"s": s, "p": p, "ev": ev, "mercado": mercado,
                       "texto": texto_seleccion(s["sel"], j1_sel, j2_sel)})
     filas.sort(key=lambda f: f["ev"]["edge"], reverse=True)
@@ -169,8 +167,8 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
                     if f["ev"]["importe"] else ""),
     } for f in filas])
     st.dataframe(tabla, use_container_width=True, hide_index=True)
-    st.caption(f"Cuota mínima = la que da un {edge_min*100:.0f} % de edge (el exigido "
-               "en este partido). Importe según tus reglas, antes del tope de la jornada.")
+    st.caption("Cuota mínima = la que da un 10 % de edge. Importe según tus reglas, "
+               "antes del tope de la jornada.")
     if w["sin_asignar"]:
         with st.expander(f"Mercados sin asignar ({len(w['sin_asignar'])}): el modelo no los cubre"):
             st.dataframe(pd.DataFrame(w["sin_asignar"], columns=["Mercado", "Salida", "Cuota"]),
@@ -178,10 +176,9 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
 
     value = [f for f in filas if f["ev"]["importe"] > 0]
     if not value:
-        st.info(f"Ninguna cuota llega al {edge_min*100:.0f} % de edge exigido (o es "
-                "«REVISAR»): no hay apuesta.")
+        st.info("Ninguna cuota llega al 10 % de edge (o es «REVISAR»): no hay apuesta.")
         return
-    if not ok or not es_admin():
+    if not es_admin():
         return
     _apuntar(value, datos, w, j1, j2, j1_sel, j2_sel)
 
