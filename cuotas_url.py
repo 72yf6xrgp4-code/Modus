@@ -152,7 +152,7 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
         "Cuota": _num(f["cuota"]), "Modelo": f"{f['p']*100:.1f} %",
         "Cuota mínima": _num(reglas.cuota_minima(f["p"], reglas.EDGE_MIN)),
         "Edge": f"{f['ev']['edge']*100:+.1f} %",
-        "": ("⚠️ REVISAR" if f["ev"]["revisar"] else "🟢" if f["ev"]["verde"] else ""),
+        "": "🟢" if f["ev"]["verde"] else "",
         "Importe": _eur(f["ev"]["importe"]) if f["ev"]["importe"] else "",
     } for f in filas])
     with st.expander(f"📋 Todas las cuotas leídas ({len(filas)}) y su value"):
@@ -233,7 +233,6 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     calc = calcular_partido(j1, j2, j1_saca_primero=True)
     filas = evaluar_cuotas(calc, cuotas_sel, j1_sel, j2_sel)
     apostables = [f for f in filas if f["ev"]["importe"] > 0]
-    revisar = [f for f in filas if f["ev"]["revisar"]]
 
     # Tope de hoy y lo ya apuntado en este partido
     fecha = fecha_jornada_madrid()
@@ -256,12 +255,7 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
                 "apuesta en este partido.")
     for i, f in enumerate(apostables):
         _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, marcadas, apuesta)
-    for f in revisar:
-        st.warning(f"⚠️ REVISAR {f['texto']} @{_num(f['cuota'])}: el modelo da "
-                   f"{f['p']*100:.0f} % (margen de más de 20 puntos). Comprueba "
-                   "los datos antes de apostar; no tiene importe.")
-    casi = [f for f in filas if f["ev"]["verde"] and not f["ev"]["importe"]
-            and not f["ev"]["revisar"]]
+    casi = [f for f in filas if f["ev"]["verde"] and not f["ev"]["importe"]]
     if casi:
         st.caption(f"🟢 También con value, pero sin llegar al {reglas.EDGE_MIN*100:.0f} % "
                    "de edge (no se apuestan): "

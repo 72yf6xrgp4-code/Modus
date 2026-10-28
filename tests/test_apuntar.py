@@ -48,6 +48,7 @@ def test_una_apuesta_por_partido():
     assert reglas.apuntar(previas, FECHA, "Andy Baetens", "Self", EV_15)[0] == 15
 
 
-def test_revisar_y_sin_edge():
-    assert reglas.apuntar([], FECHA, "A", "B", reglas.evaluar("ganador", 0.8, 2.0))[0] == 0
+def test_sin_edge_y_margen_grande():
     assert reglas.apuntar([], FECHA, "A", "B", reglas.evaluar("ganador", 0.6, 1.95))[0] == 0
+    # Margen de mas de 20 puntos: ahora se apunta normal
+    assert reglas.apuntar([], FECHA, "A", "B", reglas.evaluar("ganador", 0.771, 2.0)) == (15.0, "")
