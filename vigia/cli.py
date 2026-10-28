@@ -104,14 +104,16 @@ def _ver(aj):
             linea = f"{p['orden'] + 1:>2}. ~{hora:<9} {p['j1']} vs {p['j2']}"
             if n1 and n2 and n1 != n2:
                 d1, d2 = db[n1], db[n2]
-                ok, motivo = reglas.partido_elegible(d1.get("volatilidad"), d2.get("volatilidad"))
-                if ok:
+                req = reglas.requisito_volatilidad(d1.get("volatilidad"), d2.get("volatilidad"))
+                if req["ok"]:
                     calc = calcular_partido(d1, d2, True)
-                    filas = cuotas.tabla(calc, n1, n2)
+                    filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"])
                     linea += (f"  P(J1) {calc['p1']*100:.1f} % · "
                               + " · ".join(cuotas.resumen_aviso(filas, n1, n2)))
+                    if req["rebaja"]:
+                        linea += f"  [vol {req['vol']:.1f}: edge >= {req['edge_min']*100:.0f} %]"
                 else:
-                    linea += f"  [descartado: {motivo}]"
+                    linea += f"  [descartado: {req['motivo']}]"
             else:
                 linea += "  [no esta en los datos]"
             print(linea)

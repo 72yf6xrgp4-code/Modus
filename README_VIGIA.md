@@ -105,8 +105,8 @@ pásame el archivo.
 
 | Regla | Valor |
 |---|---|
-| Partido válido | los dos jugadores con volatilidad baja o media (alto o sin dato → se descarta y se anota en `vigia_log`) |
-| Value | edge = p × cuota − 1 ≥ 10 % |
+| Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 10 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 12 %, 15 → 16 %, 17 → 20 %) y el importe baja un escalón (7,5 → 5 €, 5 → 2,5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` |
+| Value | edge = p × cuota − 1 ≥ el mínimo exigido (10 %, o más con volatilidad alta) |
 | 🟢 | p − 1/cuota ≥ margen del mercado (`MARGEN_POR_MERCADO` de `config.py`: ganador 6, total de legs 8, hándicaps y 180s 5). Resultado exacto nunca 🟢 |
 | Importe | edge 10–15 % → 2,5 €; 15–20 % → 5 €; ≥ 20 % → 7,5 €. Más de 2,5 € solo si 🟢 y cuota ≤ 4,00 |
 | Por partido | una apuesta como máximo (las marcadas «no apostada» no cuentan) |
@@ -114,7 +114,7 @@ pásame el archivo.
 | Margen > 20 puntos | «⚠️ REVISAR», sin importe |
 
 **Cuotas mínimas** (pestaña `cuotas_minimas`): cuota justa = 1/p; para avisar
-(edge 10 %) = 1,10/p; para 5 € = 1,15/p; para 7,5 € = 1,20/p; para 🟢 =
+(edge 10 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,10/p; para 5 € = 1,15/p; para 7,5 € = 1,20/p; para 🟢 =
 1/(p − margen). Siempre se redondean **hacia arriba**: con p = 0,742 la de
 avisar es 1,49, no 1,48, porque a 1,48 el edge sería 9,8 %.
 

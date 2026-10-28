@@ -1,8 +1,12 @@
 """
 vigia/reglas.py - Reglas de apuesta (funciones puras, sin red).
 
-  - Partido valido: los DOS jugadores con volatilidad baja o media.
-  - Edge = p_modelo * cuota - 1. Aviso si edge >= 10 %.
+  - Volatilidad del partido = la del jugador mas irregular de los dos.
+    Hasta 12 (baja o media): edge minimo 10 %. Por encima de 12 (alta) no
+    se descarta: se exige 2 puntos mas de edge por cada punto que pase de
+    12 (13 -> 12 %, 15 -> 16 %, 17 -> 20 %) y el importe baja un escalon
+    (7,5 -> 5; 5 -> 2,5). Por encima de 18, o sin dato, se descarta.
+  - Edge = p_modelo * cuota - 1. Aviso si edge >= el minimo exigido.
   - Margen = p_modelo - 1/cuota. 🟢 si llega al margen del mercado (el
     mismo de la app: config.MARGENES_VALUE). Resultado exacto nunca 🟢.
   - Importe: edge 10-15 % -> 2,5 EUR; 15-20 % -> 5; >= 20 % -> 7,5. Solo
@@ -20,6 +24,10 @@ from modelo.value import calcular_yield, es_value, margen_mercado
 from modelo.volatilidad import nivel_volatilidad
 
 EDGE_MIN = 0.10
+# Volatilidad alta: edge extra por punto por encima de VOL_ALTA y limite
+VOL_ALTA = 12.0
+VOL_EDGE_POR_PUNTO = 0.02
+VOL_MAXIMA = 18.0
 UNIDAD = 2.5
 CUOTA_MAX_SUBIR = 4.0
 MARGEN_REVISAR = 0.20
@@ -38,28 +46,50 @@ MERCADO_DE_TIPO = {
 }
 
 
+def requisito_volatilidad(vol1, vol2):
+    """Lo que exige el partido segun la volatilidad de sus jugadores.
+
+    Devuelve dict con:
+      ok        False si se descarta (falta un dato o pasa de VOL_MAXIMA)
+      motivo    por que se descarta ('' si ok)
+      vol       volatilidad del partido (la mayor de las dos)
+      edge_min  edge minimo exigido (10 % hasta 12; +2 puntos por punto)
+      rebaja    True con volatilidad alta: el importe baja un escalon
+    """
+    vals = []
+    for v, quien in ((vol1, "J1"), (vol2, "J2")):
+        if nivel_volatilidad(v) is None:
+            return {"ok": False, "motivo": f"{quien} sin datos de volatilidad",
+                    "vol": None, "edge_min": None, "rebaja": False}
+        vals.append(float(str(v).replace("%", "").replace(",", ".").strip()))
+    vol = max(vals)
+    if vol > VOL_MAXIMA:
+        quien = "J1" if vals[0] >= vals[1] else "J2"
+        return {"ok": False,
+                "motivo": f"{quien} volatilidad {vol:.1f} (más de {VOL_MAXIMA:g})",
+                "vol": vol, "edge_min": None, "rebaja": False}
+    extra = max(0.0, vol - VOL_ALTA) * VOL_EDGE_POR_PUNTO
+    return {"ok": True, "motivo": "", "vol": vol,
+            "edge_min": round(EDGE_MIN + extra, 6), "rebaja": vol > VOL_ALTA}
+
+
 def partido_elegible(vol1, vol2):
-    """(True, '') si los dos jugadores tienen volatilidad baja o media;
-    si no, (False, motivo). Sin datos de volatilidad -> descartado."""
-    n1, n2 = nivel_volatilidad(vol1), nivel_volatilidad(vol2)
-    for n, quien in ((n1, "J1"), (n2, "J2")):
-        if n is None:
-            return False, f"{quien} sin datos de volatilidad"
-        if n == "alto":
-            return False, f"{quien} volatilidad alta"
-    return True, ""
+    """(True, '') si el partido se puede evaluar; si no, (False, motivo)."""
+    r = requisito_volatilidad(vol1, vol2)
+    return r["ok"], r["motivo"]
 
 
-def evaluar(mercado, p, cuota):
+def evaluar(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
     """Evalua una seleccion. mercado: 'ganador', 'handicap', 'total_legs',
-    'resultado' o '180s'. Devuelve dict con edge, margen, verde, revisar e
-    importe (antes del tope; 0 si no hay aviso o es REVISAR)."""
+    'resultado', '180s' o 'mas_180'. edge_min y rebaja salen de
+    requisito_volatilidad. Devuelve dict con edge, margen, verde, revisar
+    e importe (antes del tope; 0 si no llega al edge exigido o es REVISAR)."""
     edge = calcular_yield(p, cuota)
     margen = p - 1.0 / cuota
     verde = mercado != "resultado" and es_value(edge, cuota, mercado=mercado)
     revisar = margen > MARGEN_REVISAR
     importe = 0.0
-    if edge >= EDGE_MIN - 1e-9 and not revisar:
+    if edge >= edge_min - 1e-9 and not revisar:
         if edge >= 0.20 - 1e-9:
             importe = 7.5
         elif edge >= 0.15 - 1e-9:
@@ -68,14 +98,16 @@ def evaluar(mercado, p, cuota):
             importe = 2.5
         if not (verde and cuota <= CUOTA_MAX_SUBIR):
             importe = min(importe, UNIDAD)
+        if rebaja:
+            importe = max(UNIDAD, importe - UNIDAD)
     return {"edge": edge, "margen": margen, "verde": verde,
-            "revisar": revisar and edge >= EDGE_MIN - 1e-9,
+            "revisar": revisar and edge >= edge_min - 1e-9,
             "importe": importe}
 
 
-def importe(mercado, p, cuota):
+def importe(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
     """Importe recomendado (sin tope) en euros."""
-    return evaluar(mercado, p, cuota)["importe"]
+    return evaluar(mercado, p, cuota, edge_min, rebaja)["importe"]
 
 
 def aplicar_tope(importe_eur, gastado, tope=TOPE_DIARIO):
@@ -151,13 +183,21 @@ def cuota_minima_verde(mercado, p):
     return redondear_arriba(1.0 / (p - m))
 
 
-def cuotas_minimas(mercado, p):
-    """Todas las cuotas de referencia de una seleccion."""
+def cuotas_minimas(mercado, p, edge_min=EDGE_MIN, rebaja=False):
+    """Todas las cuotas de referencia de una seleccion.
+
+    aviso    la que llega al edge exigido (2,5 EUR)
+    eur_5    la que da 5 EUR si ademas es 🟢 y cuota <= 4 (edge 15 %; con
+             volatilidad alta hace falta el escalon de 7,5 -> edge 20 %)
+    eur_7_5  la que da 7,5 EUR (edge 20 %); None con volatilidad alta
+    verde    la que la hace 🟢 (None en resultado exacto)
+    """
+    e5 = 0.20 if rebaja else 0.15
     return {
         "justa": round(1.0 / p, 2) if p > 0 else None,
-        "aviso": cuota_minima(p, EDGE_MIN),     # edge 10 % -> 2,5 EUR
-        "eur_5": cuota_minima(p, 0.15),         # edge 15 % -> 5 EUR si 🟢
-        "eur_7_5": cuota_minima(p, 0.20),       # edge 20 % -> 7,5 EUR si 🟢
+        "aviso": cuota_minima(p, edge_min),
+        "eur_5": cuota_minima(p, max(e5, edge_min)),
+        "eur_7_5": None if rebaja else cuota_minima(p, max(0.20, edge_min)),
         "verde": cuota_minima_verde(mercado, p),
     }
 
@@ -178,7 +218,7 @@ def apuntar(alertas, fecha, j1, j2, ev, tope=TOPE_DIARIO):
     if ev["revisar"]:
         return 0.0, "⚠️ REVISAR: margen de más de 20 puntos, sin importe"
     if ev["importe"] <= 0:
-        return 0.0, "no llega al 10 % de edge"
+        return 0.0, "no llega al edge exigido"
     importe = aplicar_tope(ev["importe"], registro.gastado_del_dia(alertas, fecha), tope)
     if importe <= 0:
         return 0.0, f"tope de {tope:g} € de la jornada alcanzado"

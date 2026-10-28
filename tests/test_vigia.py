@@ -10,6 +10,7 @@ BAETENS = {"nombre_original": "Andy Baetens", "PR": 62.0, "lam_180": 1.2, "volat
 MENZIES = {"nombre_original": "Cameron Menzies", "PR": 55.0, "lam_180": 0.9, "volatilidad": 9.5}
 SELF = {"nombre_original": "Self", "PR": 58.0, "lam_180": 1.0, "volatilidad": 13.0}
 SMITH = {"nombre_original": "Ross Smith", "PR": 50.0, "lam_180": 1.0, "volatilidad": 0}
+RYDZ = {"nombre_original": "Callan Rydz", "PR": 57.0, "lam_180": 1.1, "volatilidad": 19.0}
 
 AJ = SimpleNamespace(app_url="https://modusapp.streamlit.app", duracion_partido_min=10,
                      aviso_min_antes=45, tope_diario=50.0)
@@ -52,7 +53,7 @@ def _cal(*pares, estados=None):
 def montar(cal, t):
     reloj = Reloj(t)
     hoja, notif = HojaMemoria(), Notif()
-    v = Vigia(hoja, notif, Datos([BAETENS, MENZIES, SELF, SMITH], cal), AJ, reloj=reloj)
+    v = Vigia(hoja, notif, Datos([BAETENS, MENZIES, SELF, SMITH, RYDZ], cal), AJ, reloj=reloj)
     return v, hoja, notif, reloj
 
 
@@ -90,15 +91,29 @@ def test_reinicio_no_repite_avisos():
     assert len(notif.enviados) == 1
 
 
-def test_volatilidad_alta_o_sin_dato_se_descarta_y_se_anota():
-    cal = _cal(("Andy Baetens", "Self"), ("Ross Smith", "Cameron Menzies"))
+def test_volatilidad_alta_exige_mas_edge_y_se_avisa():
+    # Self tiene volatilidad 13: no se descarta, se exige un 12 % de edge
+    cal = _cal(("Andy Baetens", "Self"))
+    v, hoja, notif, _ = montar(cal, datetime(2026, 11, 5, 13, 30, tzinfo=M))
+    v.ciclo()
+    texto, _ = notif.enviados[0]
+    assert texto.endswith("· ⚠️ vol 13,0: edge ≥12 %") and len(texto) < 200
+    fila = next(f for f in hoja.cuotas if f["seleccion"] == "Gana Baetens")
+    assert fila["edge_exigido"] == 0.12
+    from vigia import reglas
+    assert fila["cuota_min_aviso"] == reglas.cuota_minima(fila["p"], 0.12)
+    assert fila["cuota_min_7_5"] == ""          # con volatilidad alta no hay 7,5
+
+
+def test_volatilidad_mayor_de_18_o_sin_dato_se_descarta_y_se_anota():
+    cal = _cal(("Andy Baetens", "Callan Rydz"), ("Ross Smith", "Cameron Menzies"))
     v, hoja, notif, _ = montar(cal, datetime(2026, 11, 5, 13, 30, tzinfo=M))
     v.ciclo()
     v.ciclo()
     assert notif.enviados == [] and hoja.cuotas == []
     desc = [l for l in hoja.logs if l["tipo"] == "descartado"]
     assert len(desc) == 2                              # una vez por partido
-    assert "J2 volatilidad alta" in desc[0]["detalle"]
+    assert "J2 volatilidad 19.0" in desc[0]["detalle"]
     assert "J1 sin datos de volatilidad" in desc[1]["detalle"]
 
 

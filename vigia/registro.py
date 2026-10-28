@@ -26,10 +26,12 @@ COLUMNAS_LOG = ["fecha", "hora", "tipo", "partido", "detalle"]
 # cuota_min_aviso = edge 10 % (2,5 EUR); cuota_min_5 = edge 15 %;
 # cuota_min_7_5 = edge 20 % (5 y 7,5 EUR solo si ademas es 🟢 y cuota <= 4);
 # cuota_min_verde = la que hace la seleccion 🟢 (vacia en resultado exacto).
+# edge_exigido = 10 %, o mas con volatilidad alta (vigia/reglas.py).
 COLUMNAS_CUOTAS = [
     "fecha", "hora", "inicio_estimado", "jornada", "orden", "j1", "j2",
     "vol_j1", "vol_j2", "mercado", "seleccion", "p", "cuota_justa",
     "cuota_min_aviso", "cuota_min_5", "cuota_min_7_5", "cuota_min_verde",
+    "edge_exigido",
 ]
 
 ESTADO_PENDIENTE = "pendiente"

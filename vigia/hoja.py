@@ -39,8 +39,14 @@ class HojaGoogle:
                                           cols=len(columnas))
             ws.append_row(columnas)
             return ws
-        if not ws.row_values(1):
+        cabecera = ws.row_values(1)
+        if not cabecera:
             ws.append_row(columnas)
+        elif len(cabecera) < len(columnas) and cabecera == columnas[:len(cabecera)]:
+            # Version nueva con columnas anadidas al final: ampliar cabecera
+            if ws.col_count < len(columnas):
+                ws.add_cols(len(columnas) - ws.col_count)
+            ws.update(range_name="A1", values=[columnas])
         return ws
 
     def alertas(self):

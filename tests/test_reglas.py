@@ -28,11 +28,42 @@ def test_revisar_si_margen_mayor_de_20():
 
 
 def test_volatilidad():
-    assert reglas.partido_elegible("13,5", "9")[0] is False   # alto / medio
-    assert reglas.partido_elegible("9", "13,5")[0] is False
-    assert reglas.partido_elegible("9", "11,9")[0] is True    # medio / medio
-    assert reglas.partido_elegible(5, 7.9)[0] is True         # bajo / bajo
-    assert reglas.partido_elegible(0, 7)[0] is False          # sin datos
+    r = reglas.requisito_volatilidad
+    assert r("9", "11,9") == {"ok": True, "motivo": "", "vol": 11.9,
+                              "edge_min": 0.10, "rebaja": False}       # medio/medio
+    assert r(5, 7.9)["edge_min"] == 0.10                                # bajo/bajo
+    assert r(12, 5)["rebaja"] is False                                  # 12 aun es medio
+    # Alta: +2 puntos de edge por punto por encima de 12 (la del mas irregular)
+    assert r("13", "9")["edge_min"] == pytest.approx(0.12)
+    assert r(9, 15)["edge_min"] == pytest.approx(0.16)
+    assert r("17", 8)["edge_min"] == pytest.approx(0.20)
+    assert r(18, 8)["edge_min"] == pytest.approx(0.22) and r(18, 8)["rebaja"]
+    # Por encima de 18, o sin dato, se descarta
+    assert r(18.1, 8)["ok"] is False and "J1 volatilidad 18.1" in r(18.1, 8)["motivo"]
+    assert r(0, 7) == {"ok": False, "motivo": "J1 sin datos de volatilidad",
+                       "vol": None, "edge_min": None, "rebaja": False}
+    assert r(7, "")["motivo"] == "J2 sin datos de volatilidad"
+
+
+def test_volatilidad_alta_exige_mas_edge_y_baja_un_escalon():
+    # 0,70 @1,75: edge 22,5 % y 🟢 -> 7,5 EUR; con volatilidad alta, 5 EUR
+    assert reglas.importe("ganador", 0.70, 1.75) == 7.5
+    assert reglas.importe("ganador", 0.70, 1.75, edge_min=0.16, rebaja=True) == 5.0
+    # 0,70 @1,70: edge 19 % -> 5 EUR; con volatilidad alta, 2,5 EUR
+    assert reglas.importe("ganador", 0.70, 1.70, edge_min=0.12, rebaja=True) == 2.5
+    # 2,5 EUR no baja de 2,5
+    assert reglas.importe("ganador", 0.70, 1.62, edge_min=0.12, rebaja=True) == 2.5
+    # No llega al edge exigido (13,4 % < 16 %): nada
+    assert reglas.importe("ganador", 0.70, 1.62, edge_min=0.16, rebaja=True) == 0
+
+
+def test_cuotas_minimas_con_volatilidad_alta():
+    normal = reglas.cuotas_minimas("ganador", 0.742)
+    alta = reglas.cuotas_minimas("ganador", 0.742, edge_min=0.16, rebaja=True)
+    assert alta["aviso"] == reglas.cuota_minima(0.742, 0.16) > normal["aviso"]
+    assert alta["eur_5"] == reglas.cuota_minima(0.742, 0.20)   # hace falta el escalon de 7,5
+    assert alta["eur_7_5"] is None
+    assert alta["verde"] == normal["verde"]
 
 
 def test_tope():

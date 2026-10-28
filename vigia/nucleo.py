@@ -171,14 +171,14 @@ class Vigia:
             return self._descartar(clave, partido,
                                    f"no esta en los datos: {', '.join(falta) or n1}")
         d1, d2 = db[n1], db[n2]   # J1 = primero del cartel
-        ok, motivo = reglas.partido_elegible(d1.get("volatilidad"), d2.get("volatilidad"))
-        if not ok:
-            return self._descartar(clave, partido, motivo)
+        req = reglas.requisito_volatilidad(d1.get("volatilidad"), d2.get("volatilidad"))
+        if not req["ok"]:
+            return self._descartar(clave, partido, req["motivo"])
         if d1.get("PR", 0) <= 0 or d2.get("PR", 0) <= 0:
             return self._descartar(clave, partido, "sin Puntuacion Global")
 
         calc = calcular_partido(d1, d2, j1_saca_primero=True)
-        filas = cuotas.tabla(calc, n1, n2)
+        filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"])
         ahora = self.reloj()
         hora = est.strftime("%H:%M")
         v1 = nivel_volatilidad(d1.get("volatilidad")) or ""
@@ -190,11 +190,15 @@ class Vigia:
             "mercado": f["nombre_mercado"], "seleccion": f["texto"],
             "p": round(f["p"], 4), "cuota_justa": f["justa"],
             "cuota_min_aviso": f["aviso"], "cuota_min_5": f["eur_5"],
-            "cuota_min_7_5": f["eur_7_5"], "cuota_min_verde": f["verde"] or "",
+            "cuota_min_7_5": f["eur_7_5"] or "", "cuota_min_verde": f["verde"] or "",
+            "edge_exigido": round(req["edge_min"], 4),
         } for f in filas])
 
         partes = cuotas.resumen_aviso(filas, n1, n2)
         texto = f"🎯 ~{hora} {apellido(n1)} vs {apellido(n2)} · " + " · ".join(partes)
+        if req["rebaja"]:
+            texto += (f" · ⚠️ vol {req['vol']:.1f}: edge ≥{req['edge_min']*100:.0f} %"
+                      .replace(".", ","))
         texto = texto[:199]
         self.notif.enviar(texto, enlace=enlace_app(self.aj.app_url, n1, n2))
         self._avisados.add(clave)

@@ -32,8 +32,9 @@ def selecciones():
     return sel
 
 
-def tabla(calc, j1, j2):
-    """Filas con p, cuota justa y cuotas minimas de cada seleccion."""
+def tabla(calc, j1, j2, edge_min=reglas.EDGE_MIN, rebaja=False):
+    """Filas con p, cuota justa y cuotas minimas de cada seleccion (con el
+    edge exigido y la rebaja de importe de reglas.requisito_volatilidad)."""
     filas = []
     for sel in selecciones():
         p = probabilidad(calc, sel)
@@ -42,7 +43,7 @@ def tabla(calc, j1, j2):
             "sel": sel, "mercado": mercado,
             "nombre_mercado": NOMBRE_MERCADO[sel["tipo"]],
             "texto": texto_seleccion(sel, j1, j2), "p": p,
-            **reglas.cuotas_minimas(mercado, p),
+            **reglas.cuotas_minimas(mercado, p, edge_min, rebaja),
         })
     return filas
 
