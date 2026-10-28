@@ -1,0 +1,41 @@
+name: Vigia de cuotas minimas
+
+on:
+  # Igual que auto-registrar: lo lanza cron-job.org (llamada a la API,
+  # "workflow_dispatch") cada pocos minutos. Sin "schedule" propio (GitHub
+  # desactiva los programados de repos publicos tras 60 dias sin commits).
+  # Cada pasada: dentro de la ventana de jornada avisa por ntfy del partido
+  # que toca y apunta resultados; fuera, solo apunta resultados. Puede
+  # convivir con el vigia del portatil: los dos miran vigia_log antes de
+  # avisar, asi que no se repiten avisos.
+  workflow_dispatch:
+
+# Una pasada cada vez (si se solapan, la nueva espera a la anterior)
+concurrency:
+  group: vigia
+  cancel-in-progress: false
+
+jobs:
+  vigia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-vigia.txt
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-vigia.txt
+
+      - name: Una pasada del vigia
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          NTFY_TEMA: ${{ secrets.NTFY_TEMA }}
+          SHEET_ID_DATOS: ${{ secrets.SHEET_ID_DATOS }}
+        run: python -m vigia --una-vez
