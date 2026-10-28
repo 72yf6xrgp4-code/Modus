@@ -5,7 +5,7 @@ puestos, mediante parametros de la URL:
 
     ?seccion=value&j1=<J1>&j2=<J2>     aviso del vigia (J1 = primero del cartel)
     ?seccion=value&wm=<base64url>      boton "Modus value" (cuotas de Winamax)
-    ?seccion=alertas                   pestana Alertas
+    ?seccion=apuestas                  pestana Apuestas (vale tambien ?seccion=alertas)
 
 La logica de value (probabilidades, 🟢, importe, tope) es la de siempre: la
 de la app. Este modulo solo rellena las casillas y anade un panel con todas
@@ -30,7 +30,8 @@ from vigia.registro import estado_partido, gastado_del_dia, tope_del_dia
 from vigia.mercados import texto_seleccion
 from vigia.nombres import emparejar
 
-SECCION_DE_PARAM = {"value": "💰 VALUE BETS", "alertas": "🔔 ALERTAS"}
+SECCION_DE_PARAM = {"value": "💰 VALUE BETS", "apuestas": "🎟️ APUESTAS",
+                    "alertas": "🎟️ APUESTAS"}
 _PREFIJOS_CASILLAS = ("vic_", "180_", "mas_", "hcap_", "legs_")
 OPCION_MANUAL = "— Selección manual —"
 MADRID = ZoneInfo("Europe/Madrid")   # el servidor de Streamlit Cloud va en UTC
@@ -242,7 +243,7 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     if alertas is None:
         alertas = []
         if es_admin():
-            st.caption(f"⚠️ No puedo leer la pestaña alertas ({err}): no se podrá marcar.")
+            st.caption(f"⚠️ No puedo leer la pestaña alertas del Sheets ({err}): no se podrá marcar.")
     gastado = gastado_del_dia(alertas, fecha)
     marcadas, apuesta = estado_partido(alertas, fecha, j1_sel, j2_sel)
     tope = tope_del_dia(alertas)

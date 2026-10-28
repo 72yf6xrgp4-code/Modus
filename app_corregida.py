@@ -127,14 +127,14 @@ except Exception:
 # pagina, siempre visible. La barra lateral queda para el estado de la
 # jornada, el refresco y el modo administrador.
 SECCIONES = ["🔴 LIVE", "💰 VALUE BETS", "📊 RESULTADOS Y ESTADÍSTICAS",
-             "📈 SEGUIMIENTO", "📚 HISTÓRICO", "🔔 ALERTAS"]
+             "📈 SEGUIMIENTO", "📚 HISTÓRICO", "🎟️ APUESTAS"]
 # Etiquetas del menu: iconos sencillos (Material) en vez de emojis
 _MENU = {"🔴 LIVE": ":material/sensors: Live",
          "💰 VALUE BETS": ":material/payments: Value Bets",
          "📊 RESULTADOS Y ESTADÍSTICAS": ":material/leaderboard: Resultados",
          "📈 SEGUIMIENTO": ":material/monitoring: Seguimiento",
          "📚 HISTÓRICO": ":material/history: Histórico",
-         "🔔 ALERTAS": ":material/notifications: Alertas"}
+         "🎟️ APUESTAS": ":material/confirmation_number: Apuestas"}
 # Enlaces del aviso del vigia y del boton "Modus value" (?seccion=value...)
 from cuotas_url import aplicar_parametros_url
 aplicar_parametros_url()
@@ -633,8 +633,8 @@ elif "📈 SEGUIMIENTO" in opcion_principal:
     st.title("📈 Seguimiento del modelo")
     render_tracking_predicciones()
 
-elif "🔔 ALERTAS" in opcion_principal:
-    st.title("🔔 Alertas")
+elif "🎟️ APUESTAS" in opcion_principal:
+    st.title("🎟️ Mis apuestas")
     from alertas_ui import render_alertas
     render_alertas()
 
