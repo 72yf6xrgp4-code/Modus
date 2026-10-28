@@ -115,7 +115,6 @@ pásame el archivo.
 | Importe | edge 20–35 % → 5 €; 35–50 % → 10 €; más del 50 % → 15 €. Más de 5 € solo si 🟢 y cuota ≤ 4,00 |
 | Por partido | una apuesta como máximo (las marcadas «no apostada» no cuentan) |
 | Tope | 50 € por jornada más tu beneficio real acumulado (las apuestas marcadas «apostada» ya liquidadas; si vas en pérdidas, 50 €). Se recorta en múltiplos de 5 €; una «no apostada» devuelve su importe |
-| Margen > 20 puntos | «⚠️ REVISAR», sin importe |
 
 **Cuotas mínimas** (pestaña `cuotas_minimas`): cuota justa = 1/p; para avisar
 (edge 20 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,20/p;

@@ -22,9 +22,11 @@ def test_sin_edge_no_hay_importe():
     assert reglas.importe("ganador", 0.60, 1.95) == 0  # edge 17 %
 
 
-def test_revisar_si_margen_mayor_de_20():
-    ev = reglas.evaluar("ganador", 0.80, 2.00)  # margen 30 puntos
-    assert ev["revisar"] and ev["importe"] == 0
+def test_margen_grande_ya_no_es_revisar():
+    # Caso real: Gana Self @2,00 con el modelo al 77,1 % (margen 27 puntos,
+    # edge 54 %). Antes era "REVISAR" sin importe; ahora es apuesta de 15
+    ev = reglas.evaluar("ganador", 0.771, 2.00)
+    assert ev["revisar"] is False and ev["verde"] and ev["importe"] == 15.0
 
 
 def test_volatilidad():

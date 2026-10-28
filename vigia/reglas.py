@@ -13,7 +13,6 @@ vigia/reglas.py - Reglas de apuesta (funciones puras, sin red).
     mismo de la app: config.MARGENES_VALUE). Resultado exacto nunca 🟢.
   - Importe: edge 20-35 % -> 5 EUR; 35-50 % -> 10; mas del 50 % -> 15.
     Solo pasa de 5 si es 🟢 y la cuota es <= 4,00.
-  - Margen > 20 puntos -> "REVISAR": sin importe ni gasto de tope.
   - Tope por jornada: 50 EUR mas el beneficio real acumulado (si vas en
     perdidas, 50). Se recorta a lo que quede, en multiplos de 5.
   - Cuotas minimas: la cuota a partir de la cual se cumple cada regla,
@@ -35,7 +34,6 @@ VOL_EDGE_POR_PUNTO = 0.02
 VOL_MAXIMA = 18.0
 UNIDAD = 5.0      # importe minimo y escalon del tope
 CUOTA_MAX_SUBIR = 4.0
-MARGEN_REVISAR = 0.20
 TOPE_DIARIO = 50.0   # tope base por jornada (crece con el beneficio real)
 
 # Tipo de seleccion (modelo.motor.probabilidad) -> mercado para el margen
@@ -87,14 +85,14 @@ def partido_elegible(vol1, vol2):
 def evaluar(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
     """Evalua una seleccion. mercado: 'ganador', 'handicap', 'total_legs',
     'resultado', '180s' o 'mas_180'. edge_min y rebaja salen de
-    requisito_volatilidad. Devuelve dict con edge, margen, verde, revisar
-    e importe (antes del tope; 0 si no llega al edge exigido o es REVISAR)."""
+    requisito_volatilidad. Devuelve dict con edge, margen, verde e importe
+    (antes del tope; 0 si no llega al edge exigido). 'revisar' queda
+    siempre en False: la regla REVISAR (margen > 20 puntos) se quito."""
     edge = calcular_yield(p, cuota)
     margen = p - 1.0 / cuota
     verde = mercado != "resultado" and es_value(edge, cuota, mercado=mercado)
-    revisar = margen > MARGEN_REVISAR
     importe = 0.0
-    if edge >= edge_min - 1e-9 and not revisar:
+    if edge >= edge_min - 1e-9:
         importe = next(e for desde, e in TRAMOS
                        if edge > desde - 1e-9 or desde == TRAMOS[-1][0])
         if not (verde and cuota <= CUOTA_MAX_SUBIR):
@@ -102,7 +100,7 @@ def evaluar(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
         if rebaja:
             importe = bajar_escalon(importe)
     return {"edge": edge, "margen": margen, "verde": verde,
-            "revisar": revisar and edge >= edge_min - 1e-9,
+            "revisar": False,
             "importe": importe}
 
 
@@ -212,7 +210,7 @@ def cuotas_minimas(mercado, p, edge_min=EDGE_MIN, rebaja=False):
 def apuntar(alertas, fecha, j1, j2, ev, tope=None):
     """Importe con el que se puede apuntar una apuesta desde la app y, si
     es 0, el motivo. Reglas: una apuesta por partido y dia (las marcadas
-    'no apostada' no cuentan), sin importe si es REVISAR o no llega al 20 %
+    'no apostada' no cuentan), sin importe si no llega al 20 %
     de edge, y recortada al tope que quede del dia (por defecto, el tope
     que crece con el beneficio: registro.tope_del_dia)."""
     from modelo.util import normalizar_nombre
@@ -225,8 +223,6 @@ def apuntar(alertas, fecha, j1, j2, ev, tope=None):
                 and {normalizar_nombre(f.get("j1", "")),
                      normalizar_nombre(f.get("j2", ""))} == par):
             return 0.0, "ya hay una apuesta apuntada en este partido"
-    if ev["revisar"]:
-        return 0.0, "⚠️ REVISAR: margen de más de 20 puntos, sin importe"
     if ev["importe"] <= 0:
         return 0.0, "no llega al edge exigido"
     importe = aplicar_tope(ev["importe"], registro.gastado_del_dia(alertas, fecha), tope)
