@@ -1,0 +1,10 @@
+# Dependencias del vigia (portatil). La app de Streamlit usa requirements.txt.
+pandas
+numpy
+scipy
+requests
+gspread
+google-auth
+pytest
+# Windows no trae la base de zonas horarias (Europe/Madrid)
+tzdata

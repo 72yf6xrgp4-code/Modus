@@ -127,13 +127,17 @@ except Exception:
 # pagina, siempre visible. La barra lateral queda para el estado de la
 # jornada, el refresco y el modo administrador.
 SECCIONES = ["🔴 LIVE", "💰 VALUE BETS", "📊 RESULTADOS Y ESTADÍSTICAS",
-             "📈 SEGUIMIENTO", "📚 HISTÓRICO"]
+             "📈 SEGUIMIENTO", "📚 HISTÓRICO", "🔔 ALERTAS"]
 # Etiquetas del menu: iconos sencillos (Material) en vez de emojis
 _MENU = {"🔴 LIVE": ":material/sensors: Live",
          "💰 VALUE BETS": ":material/payments: Value Bets",
          "📊 RESULTADOS Y ESTADÍSTICAS": ":material/leaderboard: Resultados",
          "📈 SEGUIMIENTO": ":material/monitoring: Seguimiento",
-         "📚 HISTÓRICO": ":material/history: Histórico"}
+         "📚 HISTÓRICO": ":material/history: Histórico",
+         "🔔 ALERTAS": ":material/notifications: Alertas"}
+# Enlaces del aviso del vigia y del boton "Modus value" (?seccion=value...)
+from cuotas_url import aplicar_parametros_url
+aplicar_parametros_url()
 if st.session_state.get("seccion") not in SECCIONES:
     st.session_state["seccion"] = st.session_state.get("_ultima_seccion", SECCIONES[0])
 opcion_principal = st.segmented_control(
@@ -628,6 +632,11 @@ elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
 elif "📈 SEGUIMIENTO" in opcion_principal:
     st.title("📈 Seguimiento del modelo")
     render_tracking_predicciones()
+
+elif "🔔 ALERTAS" in opcion_principal:
+    st.title("🔔 Alertas")
+    from alertas_ui import render_alertas
+    render_alertas()
 
 elif "📚 HISTÓRICO" in opcion_principal:
     st.title("📚 Histórico de jugadores")
