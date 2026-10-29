@@ -39,11 +39,24 @@ def sistema_movil(user_agent):
     return None
 
 
+# iPhone: Winamax no abre su app desde enlaces de la web, y no tiene una
+# direccion propia documentada. Se usa un atajo de la app Atajos de Apple con
+# este nombre que abre la app de Winamax (ver README_VIGIA.md).
+ATAJO_IOS = "Abrir Winamax"
+
+
+def enlace_web_winamax(match_id):
+    return f"{WINAMAX_WEB}/match/{match_id}" if match_id else WINAMAX_WEB
+
+
 def enlace_app_winamax(match_id, sistema):
-    """Enlace que abre el partido (o las apuestas, sin id) en la app de
-    Winamax. Android: intent con el paquete y la web de reserva; iPhone: el
-    enlace normal de winamax.es, que iOS pasa a la app si esta instalada."""
-    web = f"{WINAMAX_WEB}/match/{match_id}" if match_id else WINAMAX_WEB
+    """Enlace que abre la app de Winamax. Android: intent con el paquete que
+    abre el partido (o la web, si no encuentra la app); iPhone: el atajo
+    ATAJO_IOS (abre la app en su inicio, no en el partido)."""
+    web = enlace_web_winamax(match_id)
+    if sistema == "ios":
+        from urllib.parse import quote
+        return f"shortcuts://run-shortcut?name={quote(ATAJO_IOS)}"
     if sistema != "android":
         return web
     from urllib.parse import quote

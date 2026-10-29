@@ -261,6 +261,9 @@ pestaña: la primera vez la crea y las siguientes carga ahí el partido nuevo.
 apuestas con valor, el botón «📱 Abrir en la app de Winamax» abre el partido
 (si llegaste con el botón «Modus value») en la app de Winamax, donde tienes la
 cuenta. En Android intenta abrir la app (`com.winamax.winajs`, sin confirmar
-oficialmente) y, si no la encuentra, abre el partido en la web; en iPhone
-usa el enlace normal de winamax.es, que iOS pasa a la app si está instalada.
+oficialmente) y, si no la encuentra, abre el partido en la web. En iPhone,
+Winamax no abre su app desde enlaces, así que el botón lanza un atajo de la
+app **Atajos** llamado `Abrir Winamax` (créalo una vez: Atajos → + → Abrir
+app → Winamax → nombre `Abrir Winamax`); abre la app en su inicio, no en el
+partido, y al lado hay otro botón con el partido en la web.
 En el ordenador no sale. Es solo un enlace: no inicia sesión ni apuesta.

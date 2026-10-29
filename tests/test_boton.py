@@ -249,9 +249,11 @@ def test_boton_app_winamax_en_el_movil():
     pc = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Edg/130"
     assert [sistema_movil(u) for u in (android, iphone, pc, None)] == ["android", "ios", None, None]
     web = "https://www.winamax.es/apuestas-deportivas/match/75997616"
-    assert enlace_app_winamax("75997616", "ios") == web
+    assert enlace_app_winamax("75997616", "ios") == "shortcuts://run-shortcut?name=Abrir%20Winamax"
+    from vigia.boton import enlace_web_winamax
+    assert enlace_web_winamax("75997616") == web
     a = enlace_app_winamax("75997616", "android")
     assert a.startswith("intent://www.winamax.es/apuestas-deportivas/match/75997616#Intent;")
     assert "scheme=https;" in a and a.endswith(";end")
     assert "S.browser_fallback_url=https%3A%2F%2Fwww.winamax.es%2Fapuestas-deportivas%2Fmatch%2F75997616" in a
-    assert enlace_app_winamax("", "ios") == "https://www.winamax.es/apuestas-deportivas"
+    assert enlace_web_winamax("") == "https://www.winamax.es/apuestas-deportivas"

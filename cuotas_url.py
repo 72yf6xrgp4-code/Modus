@@ -228,8 +228,18 @@ def boton_app_winamax(j1_sel, j2_sel):
         sistema = None
     if not sistema:
         return
+    from vigia.boton import ATAJO_IOS, enlace_web_winamax
     w = st.session_state.get("wm_partido")
     mid = w["datos"].get("id") if w and (w["j1"], w["j2"]) == (j1_sel, j2_sel) else ""
+    if sistema == "ios":
+        c1, c2 = st.columns(2)
+        c1.link_button("📱 Abrir la app de Winamax", enlace_app_winamax(mid, sistema),
+                       use_container_width=True,
+                       help=f"Lanza el atajo «{ATAJO_IOS}» de la app Atajos (créalo una vez: "
+                            "🎟️ Apuestas → Instalar el botón). Abre Winamax en su inicio.")
+        c2.link_button("🌐 Partido en la web" if mid else "🌐 Winamax en la web",
+                       enlace_web_winamax(mid), use_container_width=True)
+        return
     st.link_button("📱 Abrir en la app de Winamax" + (" (este partido)" if mid else ""),
                    enlace_app_winamax(mid, sistema), use_container_width=True)
 
