@@ -218,14 +218,16 @@ las del estado de carga serían de la página anterior. Si la página lleva más
 de 10 minutos abierta y algún mercado no se veía, la app avisa de que esas
 cuotas pueden haber cambiado.
 
-**Solo partidos fiables en las estadísticas.** Un partido es fiable si los
-dos jugadores llevan al menos 3 partidos esa semana antes de él, de cualquier
-día (quien jugó el día anterior ya los tiene: son 5 por jornada). Las cuotas
+**Solo partidos fiables en las estadísticas.** Un partido es fiable si cada
+jugador lleva esa semana, antes de él (de cualquier día), al menos 3
+partidos, o 2 y además tiene histórico (alguna semana anterior en la pestaña
+`Historico`, cuya media ya entra en sus datos). Quien jugó el día anterior ya
+cumple (son 5 partidos por jornada). Las cuotas
 de Winamax de un partido no fiable **no se guardan** (la app lo dice al pulsar
 el botón), y las que ya estaban guardadas no cuentan en «Winamax frente al
-modelo». En `cuotas_winamax` van `jornada`, `n_partido`, `previos_j1` y
-`previos_j2`; en las filas de esta semana que no los tenían se rellenan solos
-al apuntar los resultados.
+modelo». En `cuotas_winamax` van `jornada`, `n_partido`, `previos_j1`, `previos_j2`,
+`semanas_j1` y `semanas_j2` (semanas de histórico); en las filas que no los
+tenían se rellenan solos al abrir 🎟️ Apuestas.
 
 **«Si las hubieras hecho todas»** (🎟️ Apuestas): una apuesta por cada
 partido fiable que leíste con el botón en el que alguna cuota pasaba tu filtro

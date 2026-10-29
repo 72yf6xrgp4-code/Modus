@@ -56,6 +56,8 @@ COLUMNAS_WINAMAX = [
     # Partidos que cada jugador llevaba esta semana antes de este: solo se
     # guardan (y cuentan en las estadisticas) los partidos fiables
     "previos_j1", "previos_j2",
+    # Semanas anteriores de cada jugador en la pestana Historico
+    "semanas_j1", "semanas_j2",
 ]
 
 ESTADO_PENDIENTE = "pendiente"
@@ -305,16 +307,40 @@ def por_mercado(filas, con_volatilidad=False, todas=None):
 # PARTIDOS FIABLES Y "SI LAS HUBIERAS HECHO TODAS"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Un partido es fiable si los dos jugadores llevan al menos estos partidos
-# esta semana antes de el (de cualquier dia): con menos, el modelo casi no
-# tiene datos suyos.
+# Un partido es fiable si CADA jugador lleva esta semana, antes de el (de
+# cualquier dia), al menos MIN_PREVIOS partidos, o MIN_PREVIOS_CON_HISTORICO
+# y ademas tiene historico (alguna semana anterior, cuya media entra en sus
+# datos): con menos, el modelo casi no tiene datos suyos.
 MIN_PREVIOS = 3
+MIN_PREVIOS_CON_HISTORICO = 2
+
+
+def _jugador_fiable(fila, n):
+    previos = str(fila.get(f"previos_j{n}", "")).strip()
+    if previos == "":
+        return False
+    return (num(previos) >= MIN_PREVIOS
+            or (num(previos) >= MIN_PREVIOS_CON_HISTORICO and num(fila.get(f"semanas_j{n}")) >= 1))
 
 
 def fiable(fila):
-    """True si los dos jugadores llevaban MIN_PREVIOS partidos o mas."""
-    previos = [str(fila.get(k, "")).strip() for k in ("previos_j1", "previos_j2")]
-    return all(p != "" and num(p) >= MIN_PREVIOS for p in previos)
+    """True si los dos jugadores tienen datos suficientes: MIN_PREVIOS
+    partidos esta semana, o MIN_PREVIOS_CON_HISTORICO y su historico."""
+    return _jugador_fiable(fila, 1) and _jugador_fiable(fila, 2)
+
+
+def motivo_poco_fiable(fila):
+    """Por que un partido no es fiable (texto)."""
+    partes = []
+    for n in (1, 2):
+        if _jugador_fiable(fila, n):
+            continue
+        previos = str(fila.get(f"previos_j{n}", "")).strip() or "?"
+        semanas = int(num(fila.get(f"semanas_j{n}")))
+        partes.append(f"{fila.get(f'j{n}', f'J{n}')}: {previos} partidos esta semana y "
+                      f"{semanas} semanas de histórico")
+    return ("poco fiable (" + "; ".join(partes) + f"; hacen falta {MIN_PREVIOS} partidos, "
+            f"o {MIN_PREVIOS_CON_HISTORICO} y tener histórico)")
 
 
 def simulacion_todas(filas_winamax):
@@ -339,10 +365,7 @@ def simulacion_todas(filas_winamax):
         d = {"fecha": fecha, "partido": nombre, "cuenta": False, "motivo": "", "apuesta": None}
         detalle.append(d)
         if not fiable(fs[-1]):
-            prev = [str(fs[-1].get(k, "")).strip() for k in ("previos_j1", "previos_j2")]
-            d["motivo"] = ("sin dato de partidos previos" if "" in prev else
-                           f"poco fiable ({prev[0]} y {prev[1]} partidos previos; hacen falta "
-                           f"{MIN_PREVIOS})")
+            d["motivo"] = motivo_poco_fiable(fs[-1])
             continue
         pasan = [f for f in fs if num(f.get("importe")) > 0]
         if not pasan:
@@ -409,7 +432,8 @@ def estadisticas_winamax(filas):
       tramos     por tramo de edge: apuestas de 1 EUR a todas, aciertos, ROI
       mercados   por mercado, solo con edge >= 20 % (tu regla): n, ROI
 
-    Solo cuentan los partidos fiables (fiable(): 3 partidos previos o mas).
+    Solo cuentan los partidos fiables (fiable(): cada jugador con 3
+    partidos esta semana, o 2 y su historico).
     """
     filas = _ultimas_lecturas([f for f in filas if fiable(f)])
     resumen = {"lecturas": len({f.get("lectura") for f in filas}),

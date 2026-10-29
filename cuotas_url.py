@@ -26,7 +26,7 @@ from vigia import reglas
 from vigia.boton import (VERSION_BOTON, DatosNoValidos, casilla, decodificar, preparar,
                          seleccion_de_casilla)
 from vigia.cuotas import evaluar_cuotas
-from vigia.registro import (MIN_PREVIOS, estado_partido, fiable, gastado_del_dia,
+from vigia.registro import (estado_partido, fiable, gastado_del_dia, motivo_poco_fiable,
                             tope_del_dia)
 from vigia.mercados import texto_seleccion
 from vigia.nombres import emparejar
@@ -656,13 +656,13 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
         st.caption("📊 No se guardan las cuotas para las estadísticas: no he podido "
                    "leer las hojas de las jornadas para saber si el partido es fiable.")
         return
+    info = dict(info, semanas_j1=int(j1.get("semanas_historico") or 0),
+                semanas_j2=int(j2.get("semanas_historico") or 0))
     base.update(info)
     if not fiable(info):
-        poco = [f"{n} ({info[k]})" for n, k in ((j1_sel, "previos_j1"), (j2_sel, "previos_j2"))
-                if info[k] < MIN_PREVIOS]
-        return fin(f"📊 No se guardan las cuotas para las estadísticas: hacen falta "
-                   f"{MIN_PREVIOS} partidos previos esta semana y " + ", ".join(poco)
-                   + " no los tiene; con tan pocos datos el modelo no es fiable.")
+        return fin("📊 No se guardan las cuotas para las estadísticas: "
+                   + motivo_poco_fiable(dict(info, j1=j1_sel, j2=j2_sel))
+                   + ". Con tan pocos datos el modelo no es fiable.")
     filas = []
     for s in w["selecciones"]:
         p = probabilidad(calc, s["sel"])
@@ -679,7 +679,8 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
     ok, error = anadir_winamax(filas)
     if ok:
         fin(f"💾 {len(filas)} cuotas guardadas en la pestaña cuotas_winamax (partido "
-            f"fiable: {info['previos_j1']} y {info['previos_j2']} partidos previos).")
+            f"fiable: {info['previos_j1']} y {info['previos_j2']} partidos esta semana; "
+            f"{info['semanas_j1']} y {info['semanas_j2']} semanas de histórico).")
     else:
         st.caption(f"⚠️ No se pudieron guardar las cuotas: {error}")
 

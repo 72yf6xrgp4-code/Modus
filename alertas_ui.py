@@ -30,7 +30,8 @@ from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, HOJA_WINAMAX,
                             filas_a_dicts, gastado_del_dia, num,
                             resumen_apuestas, beneficio_fila, importe_apostado)
 from vigia.registro import (beneficio_real, por_mercado, por_mercado_y_volatilidad,
-                            simulacion_todas, tope_del_dia, MIN_PREVIOS)
+                            simulacion_todas, tope_del_dia, MIN_PREVIOS,
+                            MIN_PREVIOS_CON_HISTORICO)
 from vigia.reglas import TOPE_DIARIO
 
 
@@ -376,12 +377,52 @@ def liquidar_desde_app(filas):
     return n, ""
 
 
+def rellenar_semanas_winamax():
+    """Cuotas guardadas antes de contar el historico: les pone las semanas
+    de historico que tenia cada jugador (pestana Historico, semanas
+    anteriores a la de la fila). Devuelve cuantas filas ha completado."""
+    from datetime import datetime
+    from data_loading import _filas_historico
+    from modelo.historico import _buscar, resumen_historico, sabado_de_la_semana
+    from vigia.hoja import _celdas
+    wm, _ = cargar_winamax()
+    faltan = [f for f in wm or [] if f.get("seleccion_json")
+              and str(f.get("semanas_j1", "")).strip() == ""]
+    filas_h = _filas_historico()
+    if not faltan or not filas_h:
+        return 0
+    por_semana, cambios = {}, []
+    for f in faltan:
+        try:
+            sab = sabado_de_la_semana(datetime.fromisoformat(str(f.get("fecha"))))
+        except ValueError:
+            continue
+        if sab not in por_semana:
+            h = resumen_historico(filas_h, antes_de=sab)
+            por_semana[sab] = (h, {v["nombre_original"]: v for v in h.values()})
+        h, por_nombre = por_semana[sab]
+        cambios.append((f["_fila"], {
+            f"semanas_j{n}": (_buscar(f.get(f"j{n}", ""), h, por_nombre) or {}).get("semanas", 0)
+            for n in (1, 2)}))
+    ws, _ = _pestana(HOJA_WINAMAX, COLUMNAS_WINAMAX)
+    if ws is None or not cambios:
+        return 0
+    _asegurar_cabecera(ws, COLUMNAS_WINAMAX)
+    ws.batch_update(_celdas(COLUMNAS_WINAMAX, cambios), value_input_option="RAW")
+    cargar_winamax.clear()
+    return len(cambios)
+
+
 def _liquidar_al_abrir(filas):
     """Como mucho cada LIQUIDAR_CADA_SEG por sesion (o al pulsar Actualizar)."""
     if time.time() - st.session_state.get("_liq_t", 0) < LIQUIDAR_CADA_SEG:
         return False
     st.session_state["_liq_t"] = time.time()
     n, err = liquidar_desde_app(filas)
+    try:
+        rellenar_semanas_winamax()
+    except Exception as e:
+        st.caption(f"⚠️ No se pudieron completar las semanas de histórico: {e}")
     if err:
         st.caption(f"⚠️ No se pudieron apuntar los resultados: {err}")
     elif n:
@@ -506,8 +547,9 @@ def _bloque_resumen(filas, mejores):
             b.metric("Apostado", _eur(r["invertido"]),
                      help=f"{r['pendientes']} sin resultado todavía")
     st.caption(f"🧪 «Si las hubieras hecho todas»: una apuesta por cada partido que "
-               f"leíste con el botón «Modus value» (con los dos jugadores con {MIN_PREVIOS} "
-               f"partidos o más esa semana) en el que alguna cuota pasaba tu filtro; si "
+               f"leíste con el botón «Modus value» (con cada jugador con {MIN_PREVIOS} "
+               f"partidos esa semana, o {MIN_PREVIOS_CON_HISTORICO} y su histórico) en el que alguna "
+               f"cuota pasaba tu filtro; si "
                f"pasaban varias, la de más edge, con el importe que indicaba el modelo.")
 
 
