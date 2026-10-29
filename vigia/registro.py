@@ -317,26 +317,51 @@ def fiable(fila):
     return all(p != "" and num(p) >= MIN_PREVIOS for p in previos)
 
 
-def mejores_por_partido(filas_winamax):
-    """'Si las hubieras hecho todas': de cada partido fiable leido con el
-    boton, la mejor apuesta (la de mas edge entre las que tu regla manda
-    apostar, importe > 0) de la ultima lectura, con el importe que indicaba
-    el modelo. Devuelve filas con la forma de las de 'alertas'."""
+def simulacion_todas(filas_winamax):
+    """'Si las hubieras hecho todas', partido a partido.
+
+    De cada partido leido con el boton: una apuesta, la que pasa tu filtro
+    (importe > 0: edge >= 20 % y las demas reglas) y, si pasan varias, la de
+    mas edge, con el importe que indicaba el modelo. Si leiste el partido
+    varias veces, cuenta la lectura mas reciente en la que alguna pasaba el
+    filtro. Solo partidos fiables (fiable()).
+    Devuelve (apuestas con la forma de las de 'alertas', detalle por
+    partido: {fecha, partido, cuenta, motivo, apuesta})."""
     partidos = {}
     for f in filas_winamax:
-        if not fiable(f) or not f.get("seleccion_json"):
-            continue
+        if not f.get("seleccion_json"):
+            continue      # salidas sin asignar: no son apuestas
         clave = (f.get("fecha"), f.get("match_id") or f"{f.get('j1')}|{f.get('j2')}")
         partidos.setdefault(clave, []).append(f)
-    mejores = []
-    for fs in partidos.values():
-        ultima = max(num(f.get("lectura")) for f in fs)
-        candidatas = [f for f in fs if num(f.get("lectura")) == ultima and num(f.get("importe")) > 0]
-        if candidatas:
-            m = max(candidatas, key=lambda f: num(f.get("edge")))
-            mejores.append(dict(m, tipo_aviso=AVISO_APUESTA, estado="",
-                                partido=f"{m.get('j1')} vs {m.get('j2')}"))
-    return sorted(mejores, key=lambda f: (str(f.get("fecha")), str(f.get("hora"))))
+    mejores, detalle = [], []
+    for (fecha, _), fs in partidos.items():
+        nombre = f"{fs[0].get('j1')} vs {fs[0].get('j2')}"
+        d = {"fecha": fecha, "partido": nombre, "cuenta": False, "motivo": "", "apuesta": None}
+        detalle.append(d)
+        if not fiable(fs[-1]):
+            prev = [str(fs[-1].get(k, "")).strip() for k in ("previos_j1", "previos_j2")]
+            d["motivo"] = ("sin dato de partidos previos" if "" in prev else
+                           f"poco fiable ({prev[0]} y {prev[1]} partidos previos; hacen falta "
+                           f"{MIN_PREVIOS})")
+            continue
+        pasan = [f for f in fs if num(f.get("importe")) > 0]
+        if not pasan:
+            d["motivo"] = f"ninguna cuota llegaba al {20} % de edge"
+            continue
+        ultima = max(num(f.get("lectura")) for f in pasan)
+        m = max((f for f in pasan if num(f.get("lectura")) == ultima),
+                key=lambda f: num(f.get("edge")))
+        apuesta = dict(m, tipo_aviso=AVISO_APUESTA, estado="", partido=nombre)
+        d.update(cuenta=True, apuesta=apuesta)
+        mejores.append(apuesta)
+    orden = lambda f: (str(f.get("fecha")), str(f.get("hora")))  # noqa: E731
+    detalle.sort(key=lambda d: (str(d["fecha"]), d["partido"]))
+    return sorted(mejores, key=orden), detalle
+
+
+def mejores_por_partido(filas_winamax):
+    """Solo las apuestas de simulacion_todas."""
+    return simulacion_todas(filas_winamax)[0]
 
 
 def por_mercado_y_volatilidad(filas):

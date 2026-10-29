@@ -95,3 +95,21 @@ def test_el_vigia_rellena_jornada_numero_y_previos_de_filas_ya_guardadas():
     nueva, vieja = hoja.filas_winamax()
     assert (nueva["n_partido"], nueva["previos_j1"], nueva["previos_j2"]) == (2, 2, 2)
     assert "previos_j1" not in vieja
+
+
+def test_cuenta_la_ultima_lectura_que_pasaba_el_filtro_y_explica_el_resto():
+    from vigia.registro import simulacion_todas
+    filas = [
+        _wm("4", 500, "A", 0.30, 10, "ganada"),         # pasaba el filtro...
+        _wm("4", 600, "A", 0.05, 0, "ganada"),          # ...y en la ultima ya no
+        _wm("5", 700, "A", 0.10, 0, "perdida"),         # nunca paso
+        _wm("6", 800, "A", 0.40, 15, "", previos=(1, 4)),
+        _wm("7", 900, "A", 0.40, 15, "", previos=("", "")),
+    ]
+    mejores, detalle = simulacion_todas(filas)
+    assert [(m["match_id"], m["lectura"]) for m in mejores] == [("4", 500)]
+    motivos = {d["partido"] + d["fecha"] + str(i): d["motivo"] for i, d in enumerate(detalle)}
+    assert sum(d["cuenta"] for d in detalle) == 1 and len(detalle) == 4
+    textos = " | ".join(motivos.values())
+    assert "ninguna cuota llegaba" in textos and "poco fiable (1 y 4" in textos
+    assert "sin dato de partidos previos" in textos
