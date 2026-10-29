@@ -743,6 +743,55 @@ def cargar_historial_jornada(nombre_jugador: str, jornada: str) -> list:
     return resultados
 
 
+def _sheet_id_datos():
+    """ID del Sheet de las jornadas (secreto SHEET_ID_DATOS de la app), o ""."""
+    try:
+        return str(st.secrets.get("SHEET_ID_DATOS", "") or "").strip()
+    except Exception:
+        return ""
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def _lineas_jornada_api(jornada: str):
+    """(filas, error) de una pestana de jornada leida por la API de Google
+    con la cuenta de servicio de la app: al momento, sin el retraso del CSV
+    publicado. La pestana se busca por su gid (el de su URL publicada)."""
+    sid = _sheet_id_datos()
+    if not sid:
+        return None, "falta el secreto SHEET_ID_DATOS"
+    m = re.search(r"gid=(\d+)", URLS.get(jornada, ""))
+    if not m:
+        return None, f"no sé el gid de {jornada}"
+    try:
+        from predicciones import _conectar_gsheets
+        cliente, err = _conectar_gsheets()
+        if cliente is None:
+            return None, err
+        return cliente.open_by_key(sid).get_worksheet_by_id(int(m.group(1))).get_all_values(), ""
+    except Exception as e:
+        return None, f"la cuenta de servicio no puede leer la hoja de las jornadas ({type(e).__name__})"
+
+
+def lineas_jornada_al_momento(jornada: str):
+    """(filas, fuente) de una jornada: por la API si se puede ('API'); si
+    no, el CSV publicado ('CSV', con unos minutos de retraso)."""
+    filas, err = _lineas_jornada_api(jornada)
+    if filas:
+        return filas, "API"
+    st.session_state["_api_jornadas_error"] = err
+    return _descargar_csv_jornada(jornada), "CSV"
+
+
+def refrescar_jornadas():
+    """Vuelve a descargar las hojas de las jornadas y los jugadores (sin
+    esperar a que caduque la cache)."""
+    for f in (_lineas_jornada_api, _descargar_csv_jornada, cargar_jugadores_desde):
+        try:
+            f.clear()
+        except Exception:
+            pass
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _descargar_csv_jornada(jornada: str) -> list:
     """Descarga el CSV de una jornada UNA SOLA VEZ (cacheado 60s) y devuelve

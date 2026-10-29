@@ -12,6 +12,10 @@ HOJA_ALERTAS = "alertas"
 HOJA_LOG = "vigia_log"
 HOJA_CUOTAS = "cuotas_minimas"
 HOJA_WINAMAX = "cuotas_winamax"
+# Ultima lectura del boton "Modus value" de cada partido (los datos tal
+# cual), para recuperar las cuotas en Value Bets hasta que se juegue
+HOJA_LECTURAS = "lecturas_boton"
+COLUMNAS_LECTURAS = ["fecha", "hora", "j1", "j2", "match_id", "lectura", "wm"]
 
 COLUMNAS_ALERTAS = [
     "id", "fecha", "hora", "partido", "j1", "j2", "vol_j1", "vol_j2",

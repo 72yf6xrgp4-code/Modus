@@ -23,6 +23,7 @@ import streamlit as st
 from config import SHEET_ID_PREDICCIONES
 from helpers import es_admin, fecha_jornada_madrid
 from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, HOJA_WINAMAX,
+                            HOJA_LECTURAS, COLUMNAS_LECTURAS,
                             COLUMNAS_WINAMAX, estadisticas_winamax, AVISO_APUESTA,
                             AVISO_REVISAR, ESTADO_APOSTADA,
                             ESTADO_NO_APOSTADA, ESTADO_PENDIENTE,
@@ -177,6 +178,31 @@ def anadir_winamax(filas):
     except Exception as e:
         return False, str(e)
     cargar_winamax.clear()
+    return True, ""
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_lecturas_boton():
+    """Lecturas del boton guardadas (pestana 'lecturas_boton'), o (None, error)."""
+    ws, err = _pestana(HOJA_LECTURAS, COLUMNAS_LECTURAS)
+    if ws is None:
+        return None, err
+    try:
+        return filas_a_dicts(ws.get_all_values()), ""
+    except Exception as e:
+        return None, str(e)
+
+
+def anadir_lectura_boton(fila):
+    """Guarda una lectura del boton (para recuperarla luego). (ok, error)"""
+    ws, err = _pestana(HOJA_LECTURAS, COLUMNAS_LECTURAS)
+    if ws is None:
+        return False, err
+    try:
+        ws.append_row([fila.get(c, "") for c in COLUMNAS_LECTURAS], value_input_option="RAW")
+    except Exception as e:
+        return False, str(e)
+    cargar_lecturas_boton.clear()
     return True, ""
 
 

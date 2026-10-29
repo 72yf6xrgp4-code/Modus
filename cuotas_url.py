@@ -81,6 +81,7 @@ def preparar_value_bets(nombres_disponibles):
             return
         j1, j2 = r["j1"], r["j2"]
         st.session_state["wm_partido"] = dict(r, datos=datos)
+        _recordar_lectura(e["wm"], datos, j1, j2)
     else:
         j1 = emparejar(e.get("j1") or "", nombres_disponibles)
         j2 = emparejar(e.get("j2") or "", nombres_disponibles)
@@ -119,20 +120,20 @@ def preparar_value_bets(nombres_disponibles):
 
 
 def comprobar_partido_anterior(j1_sel, j2_sel):
-    """(jornada, lista de vigia.frescura.partido_anterior) del partido, o
-    (None, None) si no hay jornada en juego o no se puede leer la hoja."""
-    from data_loading import (_descargar_csv_jornada, cargar_jugadores_desde,
-                              detectar_jornada_de_hoy)
+    """(jornada, lista de vigia.frescura.partido_anterior, fuente) del
+    partido, o (None, None, "") si no hay jornada en juego o no se puede leer
+    la hoja. fuente: 'API' (al momento) o 'CSV' (con unos minutos de retraso)."""
+    from data_loading import cargar_jugadores_desde, detectar_jornada_de_hoy, lineas_jornada_al_momento
     from modelo.datos import partidos_de_jornada
     from vigia.frescura import partido_anterior
     jornada = detectar_jornada_de_hoy(exigir_datos=False)
     if not jornada:
-        return None, None
-    lineas = _descargar_csv_jornada(jornada)
+        return None, None, ""
+    lineas, fuente = lineas_jornada_al_momento(jornada)
     if not lineas:
-        return jornada, None
+        return jornada, None, fuente
     stats_hoy = cargar_jugadores_desde(jornada) or {}
-    return jornada, partido_anterior(partidos_de_jornada(lineas), j1_sel, j2_sel, stats_hoy)
+    return jornada, partido_anterior(partidos_de_jornada(lineas), j1_sel, j2_sel, stats_hoy), fuente
 
 
 def datos_partido(j1_sel, j2_sel):
@@ -140,14 +141,14 @@ def datos_partido(j1_sel, j2_sel):
     el cartel de hoy y cuantos partidos llevaba cada jugador esta semana
     antes de el. None si no se pueden leer las hojas de las jornadas."""
     try:
-        from data_loading import _descargar_csv_jornada
+        from data_loading import lineas_jornada_al_momento
         from modelo.datos import jornadas_del_dia, jornadas_hasta, partidos_de_jornada
         from vigia.frescura import info_partido
         from vigia.horario import dia_jornada
         dia = dia_jornada(datetime.now(MADRID))
         semana = {}
         for j in jornadas_hasta(dia):
-            lineas = _descargar_csv_jornada(j)
+            lineas, _ = lineas_jornada_al_momento(j)
             if not lineas:
                 return None
             semana[j] = partidos_de_jornada(lineas)
@@ -159,7 +160,17 @@ def datos_partido(j1_sel, j2_sel):
 def _aviso_partido_anterior(j1_sel, j2_sel, completo):
     """Avisa si los datos aun no tienen el partido anterior de alguno de
     los dos jugadores (completo=False: solo una linea si falta algo)."""
-    jornada, res = comprobar_partido_anterior(j1_sel, j2_sel)
+    import time
+    from data_loading import refrescar_jornadas
+    jornada, res, origen = comprobar_partido_anterior(j1_sel, j2_sel)
+    if completo and res and any(not r["ok"] for r in res):
+        # Antes de avisar, se vuelve a descargar todo una vez (como mucho
+        # una vez por minuto y partido): puede ser solo la cache
+        clave = (j1_sel, j2_sel, int(time.time() // 60))
+        if st.session_state.get("_frescura_reintento") != clave:
+            st.session_state["_frescura_reintento"] = clave
+            refrescar_jornadas()
+            st.rerun()
     if jornada is None:
         if completo:
             st.caption("ℹ️ No hay jornada en juego: los datos son los del Resumen Semanal.")
@@ -176,17 +187,27 @@ def _aviso_partido_anterior(j1_sel, j2_sel, completo):
                        + " ni de ".join(r["jugador"] for r in malos)
                        + " (detalle arriba, en «Cuotas de Winamax»).")
             return
+        retraso = ("" if origen == "API" else
+                   " (la hoja se ha leído del CSV publicado, que va con unos minutos de "
+                   "retraso: si el partido acaba de terminar, espera un poco)")
         st.error("⚠️ **Faltan datos del partido anterior.** "
                  + " ".join(f"**{r['jugador']}**: {r['texto']}." for r in malos)
-                 + " El modelo aún no lo tiene en cuenta: pulsa «Ejecutar actualización» "
-                   "en la barra lateral, espera un poco y pulsa «Refrescar datos» antes "
-                   "de apostar.")
+                 + " El modelo aún no lo tiene en cuenta" + retraso + ": pulsa «Ejecutar "
+                   "actualización» en la barra lateral, espera un poco y pulsa «Refrescar "
+                   "datos» antes de apostar.")
         for r in res:
             if r["ok"]:
                 st.caption(f"✅ {r['jugador']}: {r['texto']}.")
     elif completo:
         st.caption("✅ Datos al día — " + " · ".join(
             f"{r['jugador']}: {r['texto']}" for r in res) + ".")
+    if completo:
+        if origen == "API":
+            st.caption("🔄 Estado de los partidos leído al momento (API de Google).")
+        else:
+            st.caption("🕒 Estado de los partidos leído del CSV publicado (unos minutos de "
+                       "retraso): " + str(st.session_state.get("_api_jornadas_error") or "")
+                       + ". Ver README_VIGIA.md para leerlo al momento.")
     if completo and fuente not in ("Forma reciente", jornada) and any(r["jugados"] for r in res):
         st.caption(f"ℹ️ Estás usando la fuente «{fuente}», que no incluye los partidos "
                    f"de hoy; la recomendada es ⚡ Forma reciente.")
@@ -242,6 +263,95 @@ def boton_app_winamax(j1_sel, j2_sel):
         return
     st.link_button("📱 Abrir en la app de Winamax" + (" (este partido)" if mid else ""),
                    enlace_app_winamax(mid, sistema), use_container_width=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CUOTAS DEL BOTON GUARDADAS POR PARTIDO (hasta que se juegue)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MAX_WM_HOJA = 45_000   # una celda de Google Sheets admite 50.000 caracteres
+
+
+def _recordar_lectura(wm, datos, j1, j2):
+    """Guarda la lectura del boton de este partido: en la sesion y, en modo
+    administrador, en la pestana 'lecturas_boton' (para recuperarla aunque
+    cierres la pagina)."""
+    hoy = fecha_jornada_madrid()
+    st.session_state.setdefault("wm_por_partido", {})[(hoy, j1, j2)] = wm
+    if not es_admin() or len(wm) > MAX_WM_HOJA:
+        return
+    from alertas_ui import anadir_lectura_boton
+    anadir_lectura_boton({"fecha": hoy, "hora": datetime.now(MADRID).strftime("%H:%M"),
+                          "j1": j1, "j2": j2, "match_id": datos.get("id", ""),
+                          "lectura": datos.get("h", ""), "wm": wm})
+
+
+def _empezado(j1_sel, j2_sel):
+    """True si el partido ya ha empezado (o terminado) segun la hoja."""
+    try:
+        from data_loading import lineas_jornada_al_momento
+        from modelo.datos import jornadas_del_dia, partidos_de_jornada
+        from vigia.frescura import partido_en_cartel
+        from vigia.horario import dia_jornada
+        for j in jornadas_del_dia(dia_jornada(datetime.now(MADRID))):
+            lineas, _ = lineas_jornada_al_momento(j)
+            p = partido_en_cartel(partidos_de_jornada(lineas), j1_sel, j2_sel) if lineas else None
+            if p:
+                return p["estado"] != "pendiente"
+    except Exception:
+        pass
+    return False
+
+
+def _lectura_guardada(j1_sel, j2_sel):
+    """La ultima lectura del boton de hoy para este partido (base64) o None:
+    de la sesion o de la pestana 'lecturas_boton'."""
+    from vigia.nombres import mismo_jugador
+    hoy = fecha_jornada_madrid()
+    wm = st.session_state.get("wm_por_partido", {}).get((hoy, j1_sel, j2_sel))
+    if wm:
+        return wm
+    from alertas_ui import cargar_lecturas_boton
+    filas, _ = cargar_lecturas_boton()
+    de_hoy = [f for f in filas or [] if f.get("fecha") == hoy and f.get("wm")
+              and ((mismo_jugador(f.get("j1", ""), j1_sel) and mismo_jugador(f.get("j2", ""), j2_sel))
+                   or (mismo_jugador(f.get("j1", ""), j2_sel) and mismo_jugador(f.get("j2", ""), j1_sel)))]
+    if not de_hoy:
+        return None
+    return max(de_hoy, key=lambda f: float(str(f.get("lectura") or 0) or 0))["wm"]
+
+
+def restaurar_cuotas(j1_sel, j2_sel, nombres_disponibles):
+    """Al volver a un partido en Value Bets: si ya leiste sus cuotas con el
+    boton hoy y aun no ha empezado, se vuelven a poner (la ultima lectura).
+    Llamar despues de elegir J1/J2 y antes de pintar las casillas."""
+    w = st.session_state.get("wm_partido")
+    if not (w and (w["j1"], w["j2"]) == (j1_sel, j2_sel)):
+        wm = _lectura_guardada(j1_sel, j2_sel)
+        if not wm:
+            return
+        try:
+            datos = decodificar(wm)
+            w = preparar(datos, nombres_disponibles, _cartel())
+        except DatosNoValidos:
+            return
+        if (w["j1"], w["j2"]) != (j1_sel, j2_sel):
+            return       # J1/J2 al reves de como esta en el cartel: no se rellena
+        w = dict(w, datos=datos, restaurada=True)
+    # Casillas vacias (al cambiar de partido se vacian): se rellenan con la
+    # lectura, salvo que el partido ya haya empezado
+    faltan = [s_ for s_ in w["selecciones"]
+              if casilla(s_["sel"]) and st.session_state.get(casilla(s_["sel"])) is None
+              and 1.01 <= s_["cuota"] <= 50.0]
+    if not faltan or _empezado(j1_sel, j2_sel):
+        return
+    st.session_state["wm_partido"] = w
+    for s_ in faltan:
+        st.session_state[casilla(s_["sel"])] = float(s_["cuota"])
+    datos = w["datos"]
+    hora = datetime.fromtimestamp(datos["h"], MADRID).strftime("%H:%M") if datos["h"] else "?"
+    st.info(f"♻️ Cuotas de Winamax de las {hora} recuperadas para este partido: se "
+            "mantienen hasta que empiece. Si han cambiado, vuelve a pulsar «Modus value».")
 
 
 def _num(v):
@@ -506,7 +616,7 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
     de ese momento, para comparar y sacar estadisticas."""
     import json
     lectura = f"{datos['id'] or j1_sel}-{datos['h']}"
-    if not es_admin():
+    if not es_admin() or w.get("restaurada"):
         return
     hecho = st.session_state.get("_wm_guardada")
     if hecho and hecho[0] == lectura:      # ya se guardo (o no) en esta lectura

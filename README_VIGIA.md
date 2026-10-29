@@ -267,3 +267,19 @@ app **Atajos** llamado `Abrir Winamax` (créalo una vez: Atajos → + → Abrir
 app → Winamax → nombre `Abrir Winamax`); abre la app en su inicio, no en el
 partido, y al lado hay otro botón con el partido en la web.
 En el ordenador no sale. Es solo un enlace: no inicia sesión ni apuesta.
+
+**Estado de los partidos al momento en la app.** La app lee las hojas de las
+jornadas por la API de Google (sin el retraso del CSV publicado) si tiene:
+1. En Streamlit Cloud → tu app → *Settings* → *Secrets*, una línea
+   `SHEET_ID_DATOS = "…"` con el mismo valor que en el `.env` del portátil.
+2. La hoja de las jornadas compartida (como *Lector*) con el correo de la
+   cuenta de servicio de la app (`client_email` de su JSON en los secretos).
+Si no, usa el CSV publicado y lo dice («🕒 … unos minutos de retraso»). Antes
+de avisar de que falta el partido anterior, la app vuelve a descargarlo todo
+una vez.
+
+**Las cuotas del botón se mantienen por partido.** Cada lectura del botón
+«Modus value» se guarda (en la sesión y, en modo administrador, en la pestaña
+`lecturas_boton`). Si vuelves a ese partido en Value Bets, aunque hayas
+cambiado de partido o cerrado la página, se vuelven a poner sus cuotas (la
+última lectura de hoy) hasta que el partido empiece.

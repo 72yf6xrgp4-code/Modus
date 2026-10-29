@@ -1185,12 +1185,15 @@ def render_value_bets():
     # partido anterior seguian puestas y salian "value bets" que no lo eran.
     par_actual = (j1_sel, j2_sel)
     if st.session_state.get("_vb_par") not in (None, par_actual):
+        # A None (no borrar la clave): si se borra, el navegador sigue
+        # ensenando la cuota anterior aunque el calculo ya no la use
         for k in [k for k in st.session_state.keys()
                   if isinstance(k, str) and k.startswith(
                       ("vic_", "180_", "mas_", "hcap_", "legs_"))]:
-            del st.session_state[k]
+            st.session_state[k] = None
     st.session_state["_vb_par"] = par_actual
-    from cuotas_url import render_info_historico
+    from cuotas_url import render_info_historico, restaurar_cuotas
+    restaurar_cuotas(j1_sel, j2_sel, nombres_disponibles)
     render_info_historico(j1_sel, j2_sel, db_jugadores)
     with col3:
         st.markdown("<br>", unsafe_allow_html=True)
