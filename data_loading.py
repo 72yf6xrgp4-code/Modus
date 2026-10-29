@@ -277,6 +277,33 @@ def cargar_forma_reciente():
     return _con_historico(base)
 
 
+def _nombres_de_la_semana():
+    """Jugadores que aparecen en los carteles de esta semana: las jornadas
+    hasta hoy y la que esta en juego o es la proxima."""
+    from modelo.datos import jornadas_hasta, partidos_de_jornada
+    try:
+        from zoneinfo import ZoneInfo
+        ahora = datetime.now(ZoneInfo("Europe/Madrid"))
+    except Exception:
+        ahora = datetime.now()
+    from vigia.horario import dia_jornada   # de 00:00 a 03:00, el dia anterior
+    jornadas = list(jornadas_hasta(dia_jornada(ahora)))
+    actual = detectar_jornada_de_hoy(exigir_datos=False)
+    if not actual:
+        try:
+            actual = proxima_jornada()[0]
+        except Exception:
+            actual = None
+    if actual and actual not in jornadas:
+        jornadas.append(actual)
+    nombres = set()
+    for j in jornadas:
+        lineas = _descargar_csv_jornada(j)
+        for p in partidos_de_jornada(lineas) if lineas else []:
+            nombres.update((p["j1"], p["j2"]))
+    return sorted(nombres)
+
+
 def _con_historico(base):
     """Mezcla los datos de esta semana con las semanas anteriores de la
     pestana 'Historico', con muy poco peso (modelo/historico.py). Los
@@ -295,9 +322,10 @@ def _con_historico(base):
         if not historico:
             estado["error"] = "el Historico no tiene semanas anteriores con datos"
             return base
-        # Todos los jugadores del historico: los que no tienen datos esta
-        # semana salen solo con el (asi se pueden elegir en Value Bets)
-        return combinar_con_historico(base, historico)
+        # Los jugadores de ESTA semana sin datos todavia salen solo con su
+        # historico (asi se pueden elegir en Value Bets); los demas del
+        # historico, no
+        return combinar_con_historico(base, historico, nombres_extra=_nombres_de_la_semana())
     except Exception as e:
         estado["error"] = f"{type(e).__name__}: {e}"
         return base

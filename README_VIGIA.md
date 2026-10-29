@@ -237,9 +237,10 @@ seguimiento por mercado compara las dos cosas.
 y el vigía) mezcla los datos de esta semana con la media de las semanas
 anteriores de cada jugador, con muy poco peso: todo su histórico vale como
 **un partido** de esta semana (sin partidos esta semana: solo el histórico;
-con 1, el 50 %; con 3, el 25 %; con 9, el 10 %). Los jugadores del histórico
-que aún no tienen datos esta semana salen solo con él (antes no se podían
-calcular) y se pueden elegir en Value Bets. Los nombres se emparejan aunque
+con 1, el 50 %; con 3, el 25 %; con 9, el 10 %). Los jugadores de los
+carteles de esta semana que aún no tienen datos salen solo con su histórico
+(antes no se podían calcular) y se pueden elegir en Value Bets; los del
+histórico que no juegan esta semana no salen. Los nombres se emparejan aunque
 estén escritos distinto (otro orden, inicial...). Debajo de los selectores de
 Value Bets, «📚» dice cuánto pesan las semanas anteriores en cada jugador, o
 por qué no se usan. Las estadísticas siguen contando solo partidos fiables
