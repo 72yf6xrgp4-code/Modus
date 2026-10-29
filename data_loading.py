@@ -23,15 +23,35 @@ from modelo.datos import (  # noqa: F401
     jugadores_desde_df, jornada_por_hora, combinar_forma_reciente,
 )
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _filas_historico():
+    """Filas de la pestana 'Historico' (semanas anteriores) como dicts."""
+    try:
+        from predicciones import cargar_historico
+        df = cargar_historico()
+        return [] if df is None or df.empty else df.to_dict("records")
+    except Exception:
+        return []
+
+
+def referencia_volatilidad_app():
+    """(p33, p67) de la volatilidad de la hoja en el historico, o None."""
+    from modelo.historico import referencia_volatilidad
+    return referencia_volatilidad([f.get("Volatilidad") for f in _filas_historico()])
+
+
 @st.cache_data(ttl=30, show_spinner="Cargando datos del Sheet...")
 def cargar_jugadores_desde(pestana: str):
+    """Jugadores de una pestana, con la volatilidad ajustada a tus datos
+    (modelo/historico.py; la de la hoja queda en 'volatilidad_hoja')."""
+    from modelo.historico import ajustar_jugadores
     try:
         url = URLS.get(pestana, "")
         if not url:
             return {}
         df = pd.read_csv(url, header=None)
         st.session_state.last_update[pestana] = datetime.now()
-        return jugadores_desde_df(pestana, df)
+        return ajustar_jugadores(jugadores_desde_df(pestana, df), referencia_volatilidad_app())
     except Exception as e:
         st.error(f"Error cargando {pestana}: {e}")
         return {}
@@ -245,18 +265,48 @@ def cargar_forma_reciente():
     cargar_jugadores_desde, para que el resto de la app no note diferencia.
     """
     resumen = cargar_jugadores_desde("Resumen Semanal")
-    if not resumen:
-        # Sin Resumen no hay base: devolvemos lo que haya de hoy, o vacio.
-        jornada_hoy = detectar_jornada_de_hoy()
-        return cargar_jugadores_desde(jornada_hoy) if jornada_hoy else {}
-
     jornada_hoy = detectar_jornada_de_hoy()
-    if not jornada_hoy:
+    if not resumen:
+        # Sin Resumen no hay base: lo que haya de hoy, o vacio.
+        base = cargar_jugadores_desde(jornada_hoy) if jornada_hoy else {}
+    elif not jornada_hoy:
         # No hay jornada con datos: la forma reciente es solo el Resumen.
-        return resumen
-    datos_hoy = cargar_jugadores_desde(jornada_hoy)
+        base = resumen
+    else:
+        base = combinar_forma_reciente(resumen, cargar_jugadores_desde(jornada_hoy))
+    return _con_historico(base)
 
-    return combinar_forma_reciente(resumen, datos_hoy)
+
+def _nombres_de_hoy():
+    """Jugadores del cartel de la jornada en juego (o la proxima)."""
+    from modelo.datos import partidos_de_jornada
+    jornada = detectar_jornada_de_hoy(exigir_datos=False)
+    if not jornada:
+        try:
+            jornada = proxima_jornada()[0]
+        except Exception:
+            jornada = None
+    lineas = _descargar_csv_jornada(jornada) if jornada else []
+    nombres = set()
+    for p in partidos_de_jornada(lineas) if lineas else []:
+        nombres.update((p["j1"], p["j2"]))
+    return sorted(nombres)
+
+
+def _con_historico(base):
+    """Mezcla los datos de esta semana con las semanas anteriores de la
+    pestana 'Historico', con muy poco peso (modelo/historico.py). Los
+    jugadores de hoy sin datos esta semana salen solo con su historico."""
+    from modelo.historico import combinar_con_historico, resumen_historico
+    try:
+        from predicciones import _fecha_sabado_de_la_semana
+        historico = resumen_historico(_filas_historico(), antes_de=_fecha_sabado_de_la_semana(),
+                                      ref=referencia_volatilidad_app())
+        if not historico:
+            return base
+        return combinar_con_historico(base, historico, nombres_extra=_nombres_de_hoy())
+    except Exception:
+        return base
 
 
 @st.cache_data(ttl=30, show_spinner="Cargando datos del Sheet...")
@@ -265,6 +315,8 @@ def cargar_todo(url, opcion, cortes):
         df = pd.read_csv(url, header=None)
         st.session_state.last_update[opcion] = datetime.now()
         if opcion == "Resumen Semanal":
+            from modelo.historico import ajustar_volatilidad
+            ref_vol = referencia_volatilidad_app()
             stats = extraer_stats_resumen_semanal(df)
             df_list = []
             for nombre_lower, stat_dict in stats.items():
@@ -281,10 +333,11 @@ def cargar_todo(url, opcion, cortes):
                 for k, v in stat_dict.items():
                     if "puntuación" in k.lower() or "puntacion" in k.lower():
                         fila[k] = v
-                # Añadir el índice de volatilidad al final
+                # Añadir el índice de volatilidad al final (ajustado a tus
+                # datos, como en el resto de la app: modelo/historico.py)
                 for k, v in stat_dict.items():
                     if "volatilidad" in k.lower():
-                        fila[k] = v
+                        fila[k] = ajustar_volatilidad(v, ref_vol)
                 df_list.append(fila)
             df_display = pd.DataFrame(df_list) if df_list else pd.DataFrame()
             return df_display, stats

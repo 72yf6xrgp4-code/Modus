@@ -102,6 +102,14 @@ class HojaGoogle:
     def filas_winamax(self):
         return filas_a_dicts(self.ws_winamax.get_all_values())
 
+    def historico(self):
+        """Filas de la pestana 'Historico' (las semanas anteriores que guarda
+        el cierre semanal), o [] si no existe."""
+        try:
+            return filas_a_dicts(self.libro.worksheet("Historico").get_all_values())
+        except Exception:
+            return []
+
     def actualizar_winamax(self, cambios):
         """[(n_fila, {columna: valor})] en una sola peticion."""
         self.ws_winamax.batch_update(_celdas(COLUMNAS_WINAMAX, cambios),
@@ -149,6 +157,9 @@ class HojaMemoria:
     def filas_winamax(self):
         return [dict(f, _fila=i + 2) for i, f in enumerate(self._winamax)]
 
+    def historico(self):
+        return []
+
     def actualizar_winamax(self, cambios):
         for n, campos in cambios:
             self._winamax[n - 2].update(campos)
@@ -187,6 +198,9 @@ class HojaSoloLectura:
 
     def filas_winamax(self):
         return self._hoja.filas_winamax()
+
+    def historico(self):
+        return self._hoja.historico()
 
     def actualizar_winamax(self, cambios):
         log.info("[simular] %d cuotas de Winamax actualizadas", len(cambios))

@@ -1993,7 +1993,8 @@ def guardar_historico_semana(jugadores, fecha_sabado=None):
             _num_es(datos.get("promedio_dardos", 0), 2),
             _num_es(datos.get("checkouts", 0), 2),
             _num_es(datos.get("pct_victorias", 0), 2),
-            _num_es(datos.get("volatilidad", 0), 2),
+            # la de la hoja, sin ajustar (el ajuste se calcula con estos datos)
+            _num_es(datos.get("volatilidad_hoja", datos.get("volatilidad", 0)), 2),
             int(safe_float(datos.get("victorias", 0))),
             int(safe_float(datos.get("derrotas", 0))),
             int(safe_float(datos.get("n_partidos", 0))),

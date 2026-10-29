@@ -232,3 +232,20 @@ leíste con el botón, la mejor apuesta (la de más edge entre las que tu regla
 manda apostar) con el importe que indicaba el modelo; una por partido. «Las
 que apostaste» son tus apuestas de verdad, con lo que apostaste. El
 seguimiento por mercado compara las dos cosas.
+
+**Semanas anteriores (pestaña `Historico`).** La «Forma reciente» (Value Bets
+y el vigía) mezcla los datos de esta semana con la media de las semanas
+anteriores de cada jugador, con muy poco peso: todo su histórico vale como
+**un partido** de esta semana (sin partidos esta semana: solo el histórico;
+con 1, el 50 %; con 3, el 25 %; con 9, el 10 %). Los jugadores del cartel de
+hoy que aún no tienen datos esta semana salen solo con su histórico (antes no
+se podían calcular). Las estadísticas siguen contando solo partidos fiables
+(3 partidos previos esta semana). El histórico lo guarda el cierre semanal.
+
+**Volatilidad ajustada.** El índice de la hoja salía casi siempre por encima
+de 12 (alto). Ahora se ajusta con tus datos del `Historico`: el tercio más
+estable queda por debajo de 8 (baja), el del medio entre 8 y 12 (media) y el
+más irregular por encima de 12 (alta); las reglas de siempre (más edge por
+encima de 12 y descarte por encima de 18 en el vigía) se aplican sobre el
+valor ajustado. El de la hoja se sigue guardando en el `Historico` sin ajustar.
+Con menos de 9 valores en el histórico no se ajusta.

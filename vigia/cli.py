@@ -99,7 +99,8 @@ def _liquidar(aj, args):
     from vigia.nucleo import DatosSheet, Vigia
     hoja = _hoja(aj, args.simular)
     v = Vigia(hoja, notif_mod.Consola(),
-              DatosSheet(lector=getattr(hoja, "leer_jornada", None)), aj)
+              DatosSheet(lector=getattr(hoja, "leer_jornada", None),
+                         historico=getattr(hoja, "historico", None)), aj)
     n = v.liquidar()
     v.hoja.volcar_log()
     return n
@@ -116,15 +117,20 @@ def _ver(aj):
 
     ahora = ahora_madrid()
     try:
-        lector = _hoja(aj, simular=True).leer_jornada
+        hoja = _hoja(aj, simular=True)
+        lector, historico = hoja.leer_jornada, hoja.historico
     except Exception as e:
         print(f"(sin acceso a la API de Google: {e}; uso el CSV publicado)")
-        lector = None
-    datos = DatosSheet(lector=lector)
+        lector = historico = None
+    datos = DatosSheet(lector=lector, historico=historico)
     datos.refrescar(ahora, forzar=True)
     db = {v["nombre_original"]: v for v in datos.jugadores.values()}
     print(f"Datos: Forma reciente (jornada con datos: {datos.jornada_hoy or 'ninguna'}, "
           f"{len(db)} jugadores) · estado de los partidos: {datos.fuente}")
+    con_hist = sum(1 for v in db.values() if v.get("peso_historico"))
+    if con_hist:
+        print(f"Histórico: {con_hist} jugadores con semanas anteriores "
+              f"({sum(1 for v in db.values() if v.get('solo_historico'))} solo con ellas)")
     if not datos.calendario:
         print("Hoy no hay jornada de Modus.")
     for jornada, lista in datos.calendario.items():
@@ -192,7 +198,8 @@ def main(argv=None):
         notif = (notif_mod.Consola() if args.simular
                  else notif_mod.crear(args.notificador or aj.notificador, aj))
         hoja = _hoja(aj, args.simular)
-        vigia = Vigia(hoja, notif, DatosSheet(lector=getattr(hoja, "leer_jornada", None)), aj)
+        vigia = Vigia(hoja, notif, DatosSheet(lector=getattr(hoja, "leer_jornada", None),
+                         historico=getattr(hoja, "historico", None)), aj)
         vigia.ciclo()   # la primera vuelta tambien apunta resultados
         vigia.hoja.volcar_log()
         return 0
@@ -227,7 +234,8 @@ def main(argv=None):
     hoja = _hoja(aj, args.simular)
     # Estado de los partidos por la API de Google (al momento), no por el CSV
     vigia = Vigia(hoja, notif,
-                  DatosSheet(aj.recarga_datos_seg, lector=getattr(hoja, "leer_jornada", None)),
+                  DatosSheet(aj.recarga_datos_seg, lector=getattr(hoja, "leer_jornada", None),
+                             historico=getattr(hoja, "historico", None)),
                   aj)
     intervalo = max(30, args.intervalo)
     vigia._log("inicio", "", f"hasta {fin.strftime('%H:%M')}"

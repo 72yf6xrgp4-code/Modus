@@ -49,9 +49,13 @@ class DatosSheet:
     (HojaGoogle.leer_jornada). El CSV publicado va con varios minutos de
     retraso; sin lector, o si la API falla, se usa el CSV."""
 
-    def __init__(self, recarga_seg=300, lector=None):
+    def __init__(self, recarga_seg=300, lector=None, historico=None):
         self.recarga_seg = recarga_seg
         self.lector = lector
+        # historico: funcion -> filas de la pestana 'Historico' (semanas
+        # anteriores): ajusta la volatilidad y completa a los jugadores con
+        # pocos datos esta semana (modelo/historico.py)
+        self.historico = historico
         self.fuente = "API" if lector else "CSV"
         self._t = 0.0
         self.jugadores = {}
@@ -80,21 +84,34 @@ class DatosSheet:
                                for j in md.jornadas_del_dia(dia)}
             return False
         # Igual que data_loading.cargar_forma_reciente: la jornada que toca
-        # por hora, solo si ya tiene datos.
+        # por hora, solo si ya tiene datos; volatilidad ajustada y semanas
+        # anteriores con poco peso.
+        from modelo import historico as mh
+        ref, hist = None, {}
+        if self.historico:
+            try:
+                filas = self.historico()
+                ref = mh.referencia_volatilidad([f.get("Volatilidad") for f in filas])
+                hist = mh.resumen_historico(filas, antes_de=mh.sabado_de_la_semana(dia), ref=ref)
+            except Exception as e:
+                log.warning("No se pudo leer el Historico: %s", e)
         jornada = md.jornada_por_hora(ahora)
-        hoy = md.cargar_jugadores(jornada) if jornada else {}
+        hoy = mh.ajustar_jugadores(md.cargar_jugadores(jornada), ref) if jornada else {}
         self.jornada_hoy = jornada if hoy else None
-        resumen = md.cargar_jugadores("Resumen Semanal")
+        resumen = mh.ajustar_jugadores(md.cargar_jugadores("Resumen Semanal"), ref)
         if not resumen:
             jugadores = hoy
         elif not self.jornada_hoy:
             jugadores = resumen
         else:
             jugadores = md.combinar_forma_reciente(resumen, hoy)
-        if jugadores:
-            self.jugadores = jugadores
         self.calendario = {j: md.partidos_de_jornada(self.lineas(j))
                            for j in md.jornadas_del_dia(dia)}
+        if hist:
+            nombres = {n for ps in self.calendario.values() for p in ps for n in (p["j1"], p["j2"])}
+            jugadores = mh.combinar_con_historico(jugadores, hist, nombres_extra=sorted(nombres))
+        if jugadores:
+            self.jugadores = jugadores
         self._t = time.time()
         return True
 
