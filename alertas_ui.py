@@ -9,7 +9,7 @@ segundo plano). Escrituras: apuntar una apuesta y los botones apostada /
 no apostada (cambian la celda 'estado'; una 'no apostada' devuelve su
 importe al tope). El resultado y el beneficio los apunta el vigia (del
 portatil o de GitHub) y, por si ninguno esta en marcha, tambien esta
-pestana al abrirla (como mucho cada 10 minutos, o al pulsar Actualizar).
+pestana al abrirla (como mucho cada minuto, o al pulsar Actualizar).
 
 Las apuestas son personales: todo se muestra solo en modo administrador.
 """
@@ -301,7 +301,7 @@ def _boton_actualizar(key):
 # RESULTADOS DESDE LA APP (por si el vigia no esta en marcha)
 # ─────────────────────────────────────────────────────────────────────────────
 
-LIQUIDAR_CADA_SEG = 600
+LIQUIDAR_CADA_SEG = 60
 
 
 class _HojaApp:
@@ -344,6 +344,16 @@ def _pendientes(filas):
                and f.get("resultado") not in ("ganada", "perdida") for f in filas)
 
 
+def _lector_api(jornada):
+    """Filas de una jornada por la API de Google (al momento). Si no se
+    puede (falta SHEET_ID_DATOS o acceso), error: DatosSheet usa el CSV."""
+    from data_loading import _lineas_jornada_api
+    filas, err = _lineas_jornada_api(jornada)
+    if not filas:
+        raise RuntimeError(err or "sin datos")
+    return filas
+
+
 def liquidar_desde_app(filas):
     """Apunta el resultado de las apuestas (y de las cuotas de Winamax
     guardadas) cuyos partidos ya han terminado, leyendo las hojas de las
@@ -367,7 +377,7 @@ def liquidar_desde_app(filas):
     ws_wm, _ = _pestana(HOJA_WINAMAX, COLUMNAS_WINAMAX)
     try:
         hoja = _HojaApp(ws, ws_wm)
-        n = Vigia(hoja, None, DatosSheet(), None).liquidar()
+        n = Vigia(hoja, None, DatosSheet(lector=_lector_api), None).liquidar()
         hoja.volcar()
     except Exception as e:
         return 0, str(e)
@@ -414,7 +424,8 @@ def rellenar_semanas_winamax():
 
 
 def _liquidar_al_abrir(filas):
-    """Como mucho cada LIQUIDAR_CADA_SEG por sesion (o al pulsar Actualizar)."""
+    """Como mucho cada LIQUIDAR_CADA_SEG por sesion (o al pulsar Actualizar
+    o Refrescar datos)."""
     if time.time() - st.session_state.get("_liq_t", 0) < LIQUIDAR_CADA_SEG:
         return False
     st.session_state["_liq_t"] = time.time()

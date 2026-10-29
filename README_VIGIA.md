@@ -110,7 +110,8 @@ Cada pasada tarda en arrancar entre 30 s y 1 min, así que los avisos llegan
 un poco más tarde que con el portátil (que mira cada minuto).
 
 **Y además, la app:** al abrir 🎟️ Apuestas apunta los resultados que falten
-(como mucho cada 10 minutos, o al pulsar «Actualizar»). Así el tope y el
+(como mucho cada minuto, o al pulsar «Actualizar» o «Refrescar datos»; por
+la API de Google si está configurada, si no del CSV publicado). Así el tope y el
 beneficio están al día aunque no haya ningún vigía en marcha.
 
 ## 2. Instalar el botón «Modus value»

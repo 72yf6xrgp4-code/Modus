@@ -309,6 +309,7 @@ if st.sidebar.button("Refrescar datos", icon=":material/refresh:",
                      help="Recarga ya los datos del Sheet"):
     st.cache_data.clear()
     st.session_state.last_update = {}
+    st.session_state.pop("_liq_t", None)   # y vuelve a apuntar resultados
     st.rerun()
 st.sidebar.caption("Se refrescan al navegar, cada 30 s.")
 
