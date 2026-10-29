@@ -11,8 +11,11 @@ vigia/reglas.py - Reglas de apuesta (funciones puras, sin red).
   - Edge = p_modelo * cuota - 1. Aviso si edge >= el minimo exigido.
   - Margen = p_modelo - 1/cuota. 🟢 si llega al margen del mercado (el
     mismo de la app: config.MARGENES_VALUE). Resultado exacto nunca 🟢.
-  - Importe: edge 20-35 % -> 5 EUR; 35-50 % -> 10; mas del 50 % -> 15.
-    Solo pasa de 5 si es 🟢 y la cuota es <= 4,00.
+  - Importe: 1/4 de Kelly sobre la banca (200 EUR + beneficio real):
+    banca * 1/4 * edge / (cuota - 1), al multiplo de 5 mas cercano, entre 5
+    y 15 EUR. Asi pesa tambien la probabilidad: con el mismo edge, mas a las
+    cuotas bajas (mas probables) y menos a las altas. Solo pasa de 5 si es
+    🟢 y la cuota es <= 4,00.
   - Tope por jornada: 50 EUR mas el beneficio real acumulado (si vas en
     perdidas, 50). Se recorta a lo que quede, en multiplos de 5.
   - Cuotas minimas: la cuota a partir de la cual se cumple cada regla,
@@ -26,8 +29,10 @@ from modelo.value import calcular_yield, es_value, margen_mercado
 from modelo.volatilidad import nivel_volatilidad
 
 EDGE_MIN = 0.20
-# Importe segun el edge: (edge desde, euros), de mayor a menor
-TRAMOS = [(0.50, 15.0), (0.35, 10.0), (0.20, 5.0)]
+# Importe: fraccion de Kelly sobre la banca, en multiplos de UNIDAD
+BANCA_INICIAL = 200.0
+FRACCION_KELLY = 0.25
+IMPORTE_MAX = 15.0
 # Volatilidad alta: edge extra por punto por encima de VOL_ALTA y limite
 VOL_ALTA = 12.0
 VOL_EDGE_POR_PUNTO = 0.02
@@ -82,25 +87,43 @@ def partido_elegible(vol1, vol2):
     return r["ok"], r["motivo"]
 
 
-def evaluar(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
+def kelly(p, cuota):
+    """Fraccion de Kelly: (p * cuota - 1) / (cuota - 1), o 0 sin ventaja."""
+    if not cuota or cuota <= 1:
+        return 0.0
+    return max(0.0, (p * cuota - 1.0) / (cuota - 1.0))
+
+
+def euros_kelly(p, cuota, banca=BANCA_INICIAL):
+    """Lo que diria 1/4 de Kelly sobre la banca, sin redondear."""
+    return max(0.0, banca) * FRACCION_KELLY * kelly(p, cuota)
+
+
+def redondear_importe(euros):
+    """Al multiplo de 5 mas cercano, entre 5 y 15."""
+    return min(IMPORTE_MAX, max(UNIDAD, math.floor(euros / UNIDAD + 0.5) * UNIDAD))
+
+
+def evaluar(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False, banca=BANCA_INICIAL):
     """Evalua una seleccion. mercado: 'ganador', 'handicap', 'total_legs',
     'resultado', '180s' o 'mas_180'. edge_min y rebaja salen de
-    requisito_volatilidad. Devuelve dict con edge, margen, verde e importe
-    (antes del tope; 0 si no llega al edge exigido). 'revisar' queda
-    siempre en False: la regla REVISAR (margen > 20 puntos) se quito."""
+    requisito_volatilidad; banca, de registro.banca_actual. Devuelve dict
+    con edge, margen, verde, kelly (euros de 1/4 de Kelly sin redondear) e
+    importe (antes del tope; 0 si no llega al edge exigido). 'revisar'
+    queda siempre en False: la regla REVISAR se quito."""
     edge = calcular_yield(p, cuota)
     margen = p - 1.0 / cuota
     verde = mercado != "resultado" and es_value(edge, cuota, mercado=mercado)
+    k = euros_kelly(p, cuota, banca)
     importe = 0.0
     if edge >= edge_min - 1e-9:
-        importe = next(e for desde, e in TRAMOS
-                       if edge > desde - 1e-9 or desde == TRAMOS[-1][0])
+        importe = redondear_importe(k)
         if not (verde and cuota <= CUOTA_MAX_SUBIR):
             importe = min(importe, UNIDAD)
         if rebaja:
             importe = bajar_escalon(importe)
     return {"edge": edge, "margen": margen, "verde": verde,
-            "revisar": False,
+            "revisar": False, "kelly": k,
             "importe": importe}
 
 
@@ -110,9 +133,9 @@ def bajar_escalon(importe_eur):
     return max(min(importe_eur, UNIDAD), importe_eur - UNIDAD)
 
 
-def importe(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False):
+def importe(mercado, p, cuota, edge_min=EDGE_MIN, rebaja=False, banca=BANCA_INICIAL):
     """Importe recomendado (sin tope) en euros."""
-    return evaluar(mercado, p, cuota, edge_min, rebaja)["importe"]
+    return evaluar(mercado, p, cuota, edge_min, rebaja, banca)["importe"]
 
 
 def aplicar_tope(importe_eur, gastado, tope=TOPE_DIARIO):
@@ -188,21 +211,42 @@ def cuota_minima_verde(mercado, p):
     return redondear_arriba(1.0 / (p - m))
 
 
-def cuotas_minimas(mercado, p, edge_min=EDGE_MIN, rebaja=False):
+def cuota_para_euros(p, euros, banca=BANCA_INICIAL):
+    """Cuota a partir de la cual 1/4 de Kelly llega a `euros` (sin
+    redondear): banca/4 * (p*c - 1)/(c - 1) >= euros -> c >= (1-k)/(p-k),
+    con k = euros / (banca/4). None si no se llega con ninguna cuota."""
+    base = max(0.0, banca) * FRACCION_KELLY
+    if base <= 0 or not p:
+        return None
+    k = euros / base
+    if p <= k or k >= 1:
+        return None
+    return redondear_arriba((1.0 - k) / (p - k))
+
+
+def cuotas_minimas(mercado, p, edge_min=EDGE_MIN, rebaja=False, banca=BANCA_INICIAL):
     """Todas las cuotas de referencia de una seleccion.
 
     aviso    la que llega al edge exigido (5 EUR)
-    eur_10   la que da 10 EUR si ademas es 🟢 y cuota <= 4 (edge 35 %; con
-             volatilidad alta hace falta el escalon de 15 -> edge 50 %)
-    eur_15   la que da 15 EUR (edge 50 %); None con volatilidad alta
+    eur_10   la que da 10 EUR con 1/4 de Kelly (si ademas es 🟢 y cuota
+             <= 4; con volatilidad alta hace falta llegar a 15 -> 10)
+    eur_15   la que da 15 EUR; None con volatilidad alta
     verde    la que la hace 🟢 (None en resultado exacto)
+    Las de 10 y 15 EUR son None si pasan de 4,00 (no se apuestan mas de 5).
     """
-    e10 = 0.50 if rebaja else 0.35
+    def para(euros):
+        # se redondea al multiplo de 5 mas cercano: 10 EUR desde 7,5; 15 desde 12,5
+        c = cuota_para_euros(p, euros - UNIDAD / 2, banca)
+        if c is None:
+            return None
+        c = max(c, cuota_minima(p, edge_min) or 0)
+        return c if c <= CUOTA_MAX_SUBIR else None
+
     return {
         "justa": round(1.0 / p, 2) if p > 0 else None,
         "aviso": cuota_minima(p, edge_min),
-        "eur_10": cuota_minima(p, max(e10, edge_min)),
-        "eur_15": None if rebaja else cuota_minima(p, max(0.50, edge_min)),
+        "eur_10": para(15.0) if rebaja else para(10.0),
+        "eur_15": None if rebaja else para(15.0),
         "verde": cuota_minima_verde(mercado, p),
     }
 

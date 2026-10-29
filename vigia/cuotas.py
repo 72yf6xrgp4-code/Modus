@@ -32,7 +32,7 @@ def selecciones():
     return sel
 
 
-def tabla(calc, j1, j2, edge_min=reglas.EDGE_MIN, rebaja=False):
+def tabla(calc, j1, j2, edge_min=reglas.EDGE_MIN, rebaja=False, banca=reglas.BANCA_INICIAL):
     """Filas con p, cuota justa y cuotas minimas de cada seleccion (con el
     edge exigido y la rebaja de importe de reglas.requisito_volatilidad)."""
     filas = []
@@ -43,7 +43,7 @@ def tabla(calc, j1, j2, edge_min=reglas.EDGE_MIN, rebaja=False):
             "sel": sel, "mercado": mercado,
             "nombre_mercado": NOMBRE_MERCADO[sel["tipo"]],
             "texto": texto_seleccion(sel, j1, j2), "p": p,
-            **reglas.cuotas_minimas(mercado, p, edge_min, rebaja),
+            **reglas.cuotas_minimas(mercado, p, edge_min, rebaja, banca),
         })
     return filas
 
@@ -72,7 +72,7 @@ def resumen_aviso(filas, j1, j2):
             f"{lado} 5,5 legs ≥{_num(legs['aviso'])}"]
 
 
-def evaluar_cuotas(calc, cuotas_sel, j1, j2):
+def evaluar_cuotas(calc, cuotas_sel, j1, j2, banca=reglas.BANCA_INICIAL):
     """Evalua con tus reglas una lista de cuotas [(sel, cuota, origen)].
 
     Para APUNTAR la volatilidad no cuenta (20 % de edge e importe normal).
@@ -94,7 +94,7 @@ def evaluar_cuotas(calc, cuotas_sel, j1, j2):
         filas.append({"sel": sel, "clave": k, "texto": texto_seleccion(sel, j1, j2),
                       "nombre_mercado": NOMBRE_MERCADO[sel["tipo"]],
                       "cuota": float(cuota), "p": p, "justa": 1.0 / p,
-                      "ev": reglas.evaluar(mercado, p, float(cuota)),
+                      "ev": reglas.evaluar(mercado, p, float(cuota), banca=banca),
                       "origen": origen})
     filas.sort(key=lambda f: f["ev"]["edge"], reverse=True)
     return filas

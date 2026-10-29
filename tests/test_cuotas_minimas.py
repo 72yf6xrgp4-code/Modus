@@ -12,7 +12,9 @@ def test_ejemplo_del_encargo():
     assert c["aviso"] == 1.62
     assert c["verde"] == 1.47
     assert c["justa"] == 1.35
-    assert c["eur_10"] == 1.82 and c["eur_15"] == 2.03   # 1,35/p y 1,50/p
+    # con 1/4 de Kelly sobre 200 EUR, a la cuota de aviso ya tocan 15 EUR
+    assert c["eur_10"] == c["eur_15"] == 1.62
+    assert reglas.importe("ganador", 0.742, 1.62) == 15.0
 
 
 def test_la_cuota_minima_cumple_la_regla():

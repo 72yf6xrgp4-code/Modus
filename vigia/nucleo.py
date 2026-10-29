@@ -230,7 +230,8 @@ class Vigia:
         if self._ya_avisado(clave, fecha):
             return
         calc = calcular_partido(d1, d2, j1_saca_primero=True)
-        filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"])
+        filas = cuotas.tabla(calc, n1, n2, req["edge_min"], req["rebaja"],
+                             banca=registro.banca_actual(self.hoja.alertas()))
         ahora = self.reloj()
         hora = hora_inicio.strftime("%H:%M") if hora_inicio else "siguiente"
         v1 = nivel_volatilidad(d1.get("volatilidad")) or ""

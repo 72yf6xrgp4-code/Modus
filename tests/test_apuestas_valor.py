@@ -1,3 +1,4 @@
+from vigia import reglas
 import json
 
 import pytest
@@ -28,7 +29,9 @@ def test_evaluar_cuotas_ordena_y_calcula_importe():
               ({"tipo": "ganador", "jugador": 1}, 9.0, "winamax")]   # repetida: manda la 1a
     filas = evaluar_cuotas(CALC, cuotas, "Derek Coulson", "Andy Baetens")
     assert len(filas) == 2
-    assert filas[0]["texto"] == "Gana Coulson" and filas[0]["ev"]["importe"] == 5.0
+    assert filas[0]["texto"] == "Gana Coulson"
+    c = round(1.25 / p1, 2)
+    assert filas[0]["ev"]["importe"] == reglas.evaluar("ganador", p1, c)["importe"] >= 5.0
     assert filas[0]["origen"] == "casilla"
     assert filas[1]["ev"]["importe"] == 0
 

@@ -354,6 +354,14 @@ def restaurar_cuotas(j1_sel, j2_sel, nombres_disponibles):
             "mantienen hasta que empiece. Si han cambiado, vuelve a pulsar «Modus value».")
 
 
+def banca_app():
+    """Banca para el 1/4 de Kelly: 200 EUR + tu beneficio real (alertas)."""
+    from alertas_ui import cargar_alertas
+    from vigia.registro import banca_actual
+    alertas, _ = cargar_alertas()
+    return banca_actual(alertas or [])
+
+
 def _num(v):
     return f"{v:.2f}".replace(".", ",")
 
@@ -395,7 +403,7 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
 
     calc = calcular_partido(j1, j2, j1_saca_primero=True)
     filas = evaluar_cuotas(calc, [(s["sel"], s["cuota"], "winamax") for s in w["selecciones"]],
-                           j1_sel, j2_sel)
+                           j1_sel, j2_sel, banca=banca_app())
     _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel)
     tabla = pd.DataFrame([{
         "Selección": f["texto"], "Mercado": f["nombre_mercado"],
@@ -482,7 +490,8 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     st.markdown(_CSS, unsafe_allow_html=True)
 
     calc = calcular_partido(j1, j2, j1_saca_primero=True)
-    filas = evaluar_cuotas(calc, cuotas_sel, j1_sel, j2_sel)
+    banca = banca_app()
+    filas = evaluar_cuotas(calc, cuotas_sel, j1_sel, j2_sel, banca=banca)
     apostables = [f for f in filas if f["ev"]["importe"] > 0]
 
     # Tope de hoy y lo ya apuntado en este partido
@@ -501,6 +510,10 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     w = st.session_state.get("wm_partido")
     if w and (w["j1"], w["j2"]) == (j1_sel, j2_sel):
         _aviso_partido_anterior(j1_sel, j2_sel, completo=False)
+    st.caption(f"💶 Importe: ¼ de Kelly sobre tu banca de {_eur(banca)} ({_eur(reglas.BANCA_INICIAL)} "
+               "+ tu beneficio real), al múltiplo de 5 € más cercano, entre 5 y 15 €. "
+               "Pesan el edge y la probabilidad: con el mismo edge, más a las cuotas bajas. "
+               "Más de 5 € solo si es 🟢 y la cuota es de 4,00 o menos.")
     st.markdown(f"<div class='ap-tope'><span>Hoy: {_eur(gastado)} de "
                 f"{_eur(tope)}</span><span>Quedan {_eur(queda)}</span>"
                 f"<span>En este partido: {n_partido}</span></div>", unsafe_allow_html=True)
@@ -654,7 +667,7 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
     for s in w["selecciones"]:
         p = probabilidad(calc, s["sel"])
         mercado = reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]]
-        ev = reglas.evaluar(mercado, p, s["cuota"])
+        ev = reglas.evaluar(mercado, p, s["cuota"], banca=banca_app())
         filas.append(dict(base, titulo=s["titulo"], salida=s["label"], mercado=s["nombre"],
                           seleccion=texto_seleccion(s["sel"], j1_sel, j2_sel),
                           cuota=s["cuota"], p_modelo=round(p, 4),

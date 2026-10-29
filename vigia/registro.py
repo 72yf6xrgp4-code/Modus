@@ -117,6 +117,13 @@ def beneficio_real(filas, hasta=None):
                and (hasta is None or str(f.get("fecha", "")) < hasta))
 
 
+def banca_actual(filas):
+    """Banca para el 1/4 de Kelly: la inicial (200 EUR) mas el beneficio
+    real acumulado (tus apuestas liquidadas; si vas perdiendo, baja)."""
+    from vigia.reglas import BANCA_INICIAL
+    return max(0.0, BANCA_INICIAL + beneficio_real(filas))
+
+
 def tope_del_dia(filas, base=None):
     """Tope de la jornada: la base (50 EUR) mas el beneficio real acumulado.
     Si vas en perdidas, se queda en la base."""

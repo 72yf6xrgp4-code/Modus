@@ -153,14 +153,14 @@ pásame el archivo.
 | Volatilidad | la del jugador más irregular de los dos. Hasta 12 (baja o media): edge mínimo 20 %. Por encima de 12 (alta): +2 puntos de edge por cada punto (13 → 22 %, 15 → 26 %, 17 → 30 %) y el importe baja un escalón (15 → 10 €, 10 → 5 €). Más de 18 o sin dato → se descarta y se anota en `vigia_log` (en los **avisos del vigía**; para **apuntar en la app** la volatilidad no cuenta: siempre 20 % e importe normal, solo se muestra como información) |
 | Value | edge = p × cuota − 1 ≥ el mínimo exigido (20 %, o más con volatilidad alta) |
 | 🟢 | p − 1/cuota ≥ margen del mercado (`MARGEN_POR_MERCADO` de `config.py`: ganador 6, total de legs 8, hándicaps y 180s 5). Resultado exacto nunca 🟢 |
-| Importe | edge 20–35 % → 5 €; 35–50 % → 10 €; más del 50 % → 15 €. Más de 5 € solo si 🟢 y cuota ≤ 4,00 |
+| Importe | ¼ de Kelly sobre la banca (200 € + tu beneficio real): banca × ¼ × edge ÷ (cuota − 1), al múltiplo de 5 € más cercano, entre 5 y 15 €. Con el mismo edge, más a las cuotas bajas (más probables). Más de 5 € solo si 🟢 y cuota ≤ 4,00 |
 | Por partido | sin límite: puedes apostar a varias selecciones del mismo partido si lo consideras |
 | Tope | 50 € por jornada más tu beneficio real acumulado (las apuestas marcadas «apostada» ya liquidadas; si vas en pérdidas, 50 €). El importe recomendado se recorta en múltiplos de 5 € a lo que quede; una «no apostada» devuelve su importe |
 | Importe a mano | en Value Bets eliges el importe antes de pulsar «Apostar» (por defecto, el recomendado), y en 🎟️ Apuestas lo puedes cambiar después con ✏️ Importe. Se guarda en la columna `importe_real` de `alertas` y solo cuenta para **tus apuestas** (tope, «Las que apostaste», beneficio real); las estadísticas del modelo («Si las hubieras hecho todas», seguimiento por mercado, Winamax frente al modelo) siguen con el recomendado (`importe`) |
 
 **Cuotas mínimas** (pestaña `cuotas_minimas`): cuota justa = 1/p; para avisar
 (edge 20 %, o el exigido por volatilidad alta: columna `edge_exigido`) = 1,20/p;
-para 10 € = 1,35/p; para 15 € = 1,50/p; para 🟢 = 1/(p − margen). Siempre se
+para 10 € y para 15 €, la cuota con la que ¼ de Kelly llega a 7,5 € y a 12,5 € (se redondean a 10 y 15); para 🟢 = 1/(p − margen). Siempre se
 redondean **hacia arriba** (con p = 0,742, la de avisar es 1,62).
 
 **Cuándo avisa el vigía:** los partidos no tienen hora fija (empiezan uno tras

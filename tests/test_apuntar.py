@@ -8,7 +8,7 @@ def _f(importe, estado="pendiente", j1="X", j2="Y", fecha=FECHA):
             "tipo_aviso": "apuesta", "estado": estado}
 
 
-EV_15 = reglas.evaluar("ganador", 0.40, 3.80)   # edge 52 % y 🟢: 15 EUR
+EV_15 = reglas.evaluar("ganador", 0.70, 2.00)   # 1/4 de Kelly 20 EUR y 🟢: 15 EUR
 
 
 def test_tope_recorta_y_bloquea():
