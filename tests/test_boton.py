@@ -129,6 +129,7 @@ def test_marcador_lee_las_cuotas_de_la_pagina(tmp_path, borrar_global):
     assert res["alerta"] is None
     q = parse_qs(urlparse(res["url"]).query)
     assert res["url"].startswith("https://modusapp.streamlit.app/?seccion=value&wm=")
+    assert res["ventana"] == "modus_app"          # siempre la misma pestana de Modus
     d = decodificar(q["wm"][0])
     assert (d["c1"], d["c2"], d["id"]) == ("Menzies, Cameron", "Baetens, Andy", "900")
     assert d["mercados"][0]["salidas"][1] == {"label": "Baetens, Andy", "code": "2", "cuota": 1.5}
@@ -239,3 +240,18 @@ def test_botones_antiguos_llegan_como_version_1():
     viejo = {"v": 1, "c1": "A", "c2": "B", "m": [["Ganador", [["A", "1", 1.5]]]]}
     wm = base64.urlsafe_b64encode(json.dumps(viejo).encode()).decode().rstrip("=")
     assert decodificar(wm)["b"] == 1 < VERSION_BOTON
+
+
+def test_boton_app_winamax_en_el_movil():
+    from vigia.boton import enlace_app_winamax, sistema_movil
+    android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile"
+    iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+    pc = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Edg/130"
+    assert [sistema_movil(u) for u in (android, iphone, pc, None)] == ["android", "ios", None, None]
+    web = "https://www.winamax.es/apuestas-deportivas/match/75997616"
+    assert enlace_app_winamax("75997616", "ios") == web
+    a = enlace_app_winamax("75997616", "android")
+    assert a.startswith("intent://www.winamax.es/apuestas-deportivas/match/75997616#Intent;")
+    assert "scheme=https;" in a and a.endswith(";end")
+    assert "S.browser_fallback_url=https%3A%2F%2Fwww.winamax.es%2Fapuestas-deportivas%2Fmatch%2F75997616" in a
+    assert enlace_app_winamax("", "ios") == "https://www.winamax.es/apuestas-deportivas"

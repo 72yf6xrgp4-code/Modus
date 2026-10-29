@@ -209,7 +209,7 @@ de cada uno calcula («✅ Datos al día»). Fuera de jornada no se comprueba (s
 usa el Resumen Semanal).
 
 **Versión del botón.** El marcador guarda una copia del código y no se
-actualiza solo. Cada vez que el botón cambia sube su versión (ahora la 2) y,
+actualiza solo. Cada vez que el botón cambia sube su versión (ahora la 3) y,
 si pulsas uno antiguo, la app te avisa de que lo reinstales (🎟️ Apuestas →
 «Instalar el botón Modus value»: copia el código y pégalo como URL del
 marcador). Desde la versión 2, si llegas al partido navegando dentro de
@@ -253,3 +253,14 @@ más irregular por encima de 12 (alta); las reglas de siempre (más edge por
 encima de 12 y descarte por encima de 18 en el vigía) se aplican sobre el
 valor ajustado. El de la hoja se sigue guardando en el `Historico` sin ajustar.
 Con menos de 9 valores en el histórico no se ajusta.
+
+**Misma pestaña (versión 3).** El botón abre Modus siempre en la misma
+pestaña: la primera vez la crea y las siguientes carga ahí el partido nuevo.
+
+**Abrir en la app de Winamax (solo móvil).** En Value Bets, encima de las
+apuestas con valor, el botón «📱 Abrir en la app de Winamax» abre el partido
+(si llegaste con el botón «Modus value») en la app de Winamax, donde tienes la
+cuenta. En Android intenta abrir la app (`com.winamax.winajs`, sin confirmar
+oficialmente) y, si no la encuentra, abre el partido en la web; en iPhone
+usa el enlace normal de winamax.es, que iOS pasa a la app si está instalada.
+En el ordenador no sale. Es solo un enlace: no inicia sesión ni apuesta.

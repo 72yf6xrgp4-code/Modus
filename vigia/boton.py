@@ -18,7 +18,38 @@ from vigia.nombres import emparejar, mismo_jugador, nombre_winamax
 MAX_WM = 60_000   # caracteres; una pagina de partido normal ocupa ~3-10 mil
 # Version del marcador (VERSION en boton/modus_value.js). Si llega una mas
 # vieja, la app pide reinstalarlo: el marcador guarda una copia del codigo.
-VERSION_BOTON = 2
+VERSION_BOTON = 3
+
+
+# Para abrir el partido en la app de Winamax del movil (boton de Value Bets).
+# Solo un enlace: no inicia sesion, no toca el boleto y no apuesta.
+WINAMAX_WEB = "https://www.winamax.es/apuestas-deportivas"
+# Paquete Android de la app de Winamax (sin confirmar oficialmente: si no es
+# este o no esta instalada, Chrome abre la web del partido)
+PAQUETE_WINAMAX_ANDROID = "com.winamax.winajs"
+
+
+def sistema_movil(user_agent):
+    """'android', 'ios' o None (ordenador) segun el User-Agent."""
+    ua = str(user_agent or "")
+    if "Android" in ua:
+        return "android"
+    if any(m in ua for m in ("iPhone", "iPad", "iPod")):
+        return "ios"
+    return None
+
+
+def enlace_app_winamax(match_id, sistema):
+    """Enlace que abre el partido (o las apuestas, sin id) en la app de
+    Winamax. Android: intent con el paquete y la web de reserva; iPhone: el
+    enlace normal de winamax.es, que iOS pasa a la app si esta instalada."""
+    web = f"{WINAMAX_WEB}/match/{match_id}" if match_id else WINAMAX_WEB
+    if sistema != "android":
+        return web
+    from urllib.parse import quote
+    return (f"intent://{web.split('://', 1)[1]}#Intent;scheme=https;"
+            f"package={PAQUETE_WINAMAX_ANDROID};"
+            f"S.browser_fallback_url={quote(web, safe='')};end")
 
 
 class DatosNoValidos(ValueError):

@@ -28,7 +28,7 @@
  */
 (function () {
   var APP = "https://modusapp.streamlit.app/";
-  var VERSION = 2;
+  var VERSION = 3;
 
   function aviso(msg) {
     alert("Modus value: " + msg);
@@ -228,7 +228,9 @@
     var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(datos))))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     var url = APP + "?seccion=value&wm=" + b64;
-    var w = window.open(url, "_blank");
+    /* Siempre la misma pestana de Modus (la primera vez la abre; despues
+       carga el partido nuevo en ella) */
+    var w = window.open(url, "modus_app");
     if (!w) location.href = url;
   } catch (e) {
     aviso("error leyendo la página (" + e.message + "). No se ha enviado nada.");

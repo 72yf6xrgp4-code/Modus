@@ -18,7 +18,7 @@ const { chromium } = require("playwright");
   p.on("dialog", async (d) => { alerta = d.message(); await d.dismiss(); });
   await p.goto(url);
   await p.evaluate(([borrar, navegada]) => {
-    window.open = (u) => { window.__abierta = u; return {}; };
+    window.open = (u, nombre) => { window.__abierta = u; window.__ventana = nombre; return {}; };
     if (borrar === "1") { try { delete window.PRELOADED_STATE; } catch (e) {} window.PRELOADED_STATE = undefined; }
     if (navegada) history.pushState({}, "", navegada);
   }, [borrar || "0", navegada || ""]);
@@ -26,6 +26,7 @@ const { chromium } = require("playwright");
   await p.evaluate(codigo);
   await p.waitForTimeout(200);
   abierta = await p.evaluate(() => window.__abierta || null);
-  process.stdout.write(JSON.stringify({ alerta, url: abierta }));
+  const ventana = await p.evaluate(() => window.__ventana || null);
+  process.stdout.write(JSON.stringify({ alerta, url: abierta, ventana }));
   await b.close();
 })();

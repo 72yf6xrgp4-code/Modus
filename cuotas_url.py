@@ -218,6 +218,22 @@ def render_info_historico(j1_sel, j2_sel, db):
     st.caption("📚 " + " · ".join(partes))
 
 
+def boton_app_winamax(j1_sel, j2_sel):
+    """Solo en el movil: boton que abre el partido en la app de Winamax
+    (donde tienes la cuenta) para apostar alli. En el ordenador no sale."""
+    from vigia.boton import enlace_app_winamax, sistema_movil
+    try:
+        sistema = sistema_movil(st.context.headers.get("User-Agent", ""))
+    except Exception:
+        sistema = None
+    if not sistema:
+        return
+    w = st.session_state.get("wm_partido")
+    mid = w["datos"].get("id") if w and (w["j1"], w["j2"]) == (j1_sel, j2_sel) else ""
+    st.link_button("📱 Abrir en la app de Winamax" + (" (este partido)" if mid else ""),
+                   enlace_app_winamax(mid, sistema), use_container_width=True)
+
+
 def _num(v):
     return f"{v:.2f}".replace(".", ",")
 
@@ -337,6 +353,7 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
 
     st.markdown("---")
     st.markdown("### 💰 Apuestas con valor")
+    boton_app_winamax(j1_sel, j2_sel)
     if not cuotas_sel:
         st.info("✍️ Escribe la cuota de tu casa en cualquier mercado de las pestañas "
                 "de arriba (o usa el botón «Modus value») y aquí verás si hay que "
