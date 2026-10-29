@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from tests import winamax_sintetico as ws
-from vigia.boton import DatosNoValidos, casilla, decodificar, preparar
+from vigia.boton import VERSION_BOTON, DatosNoValidos, casilla, decodificar, preparar
 
 RAIZ = Path(__file__).resolve().parent.parent
 RUNNER = RAIZ / "tests" / "js" / "probar_marcador.js"
@@ -100,13 +100,14 @@ necesita_navegador = pytest.mark.skipif(not _hay_playwright(),
 URL_PARTIDO = "https://www.winamax.es/apuestas-deportivas/match/900"
 
 
-def _ejecutar(tmp_path, html, url=URL_PARTIDO, borrar_global=False):
+def _ejecutar(tmp_path, html, url=URL_PARTIDO, borrar_global=False, navegada=""):
     subprocess.run(["python", str(RAIZ / "boton" / "construir.py")], check=True,
                    capture_output=True)
     f = tmp_path / "pagina.html"
     f.write_text(html, encoding="utf-8")
     r = subprocess.run(["node", str(RUNNER), str(f), url,
-                        str(RAIZ / "boton" / "marcador.txt"), "1" if borrar_global else "0"],
+                        str(RAIZ / "boton" / "marcador.txt"), "1" if borrar_global else "0",
+                        navegada],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
@@ -202,3 +203,39 @@ def test_la_pantalla_manda_sobre_el_estado_de_carga(tmp_path):
     r = preparar(d, ["Derek Coulson", "Andy Baetens"])
     h = [s for s in r["selecciones"] if s["sel"] == {"tipo": "handicap", "jugador": 1, "linea": -1.5}]
     assert h[0]["cuota"] == 2.0                                   # la de pantalla
+
+
+@necesita_navegador
+def test_navegando_desde_otra_pagina_no_usa_cuotas_viejas(tmp_path):
+    """La pagina se cargo en otra direccion (lista de partidos) y has llegado
+    al partido navegando: el estado de carga trae cuotas viejas de ese
+    partido. Solo cuenta lo que se ve; el estado, solo para los nombres."""
+    pantalla = (FIXTURES / "winamax_pantalla_modus.html").read_text(encoding="utf-8")
+    estado = (FIXTURES / "winamax_partido_modus.html").read_text(encoding="utf-8")
+    script = estado[estado.index("<script"):estado.index("</script>") + 9]
+    html = pantalla.replace("</body>", script + "</body>")
+    res = _ejecutar(tmp_path, html, url="https://www.winamax.es/apuestas-deportivas/sports/1",
+                    navegada="/apuestas-deportivas/match/75997616")
+    assert res["alerta"] is None
+    d = decodificar(parse_qs(urlparse(res["url"]).query)["wm"][0])
+    assert (d["f"], d["c1"], d["b"], d["ne"]) == ("pantalla", "Derek Coulson", VERSION_BOTON, 0)
+    assert _cuotas_ganador(d) == [1.46, 2.5]
+    assert "1er set - Marcador exacto (en legs)" not in [m["titulo"] for m in d["mercados"]]
+
+
+@necesita_navegador
+def test_manda_su_version_y_cuantos_mercados_salen_del_estado(tmp_path):
+    pantalla = (FIXTURES / "winamax_pantalla_modus.html").read_text(encoding="utf-8")
+    estado = (FIXTURES / "winamax_partido_modus.html").read_text(encoding="utf-8")
+    script = estado[estado.index("<script"):estado.index("</script>") + 9]
+    res = _ejecutar(tmp_path, pantalla.replace("</body>", script + "</body>"),
+                    url="https://www.winamax.es/apuestas-deportivas/match/75997616")
+    d = decodificar(parse_qs(urlparse(res["url"]).query)["wm"][0])
+    assert d["b"] == VERSION_BOTON and d["ne"] > 0 and d["e"] >= 0
+
+
+def test_botones_antiguos_llegan_como_version_1():
+    import base64
+    viejo = {"v": 1, "c1": "A", "c2": "B", "m": [["Ganador", [["A", "1", 1.5]]]]}
+    wm = base64.urlsafe_b64encode(json.dumps(viejo).encode()).decode().rstrip("=")
+    assert decodificar(wm)["b"] == 1 < VERSION_BOTON

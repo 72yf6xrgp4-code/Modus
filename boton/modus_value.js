@@ -14,13 +14,21 @@
  *     dentro de Winamax (sin recargar).
  *  2) El estado que la pagina trae al cargarse (PRELOADED_STATE): sirve para
  *     completar los mercados que no se ven (la lista solo pinta los que
- *     estan cerca de la pantalla), pero SOLO si es de este mismo partido.
+ *     estan cerca de la pantalla), pero SOLO si es de este mismo partido y
+ *     la pagina se cargo en este partido. Si llegaste navegando dentro de
+ *     Winamax, ese estado es de la pagina anterior y sus cuotas son viejas:
+ *     solo se usa lo que se ve.
+ *
+ * Manda tambien su VERSION: si la app tiene una mas nueva, te avisa de que
+ * reinstales el marcador (el marcador guarda una copia del codigo y no se
+ * actualiza solo).
  *
  * Este archivo es la fuente legible. El marcador que se instala es
  * boton/marcador.txt (generado con: python boton/construir.py).
  */
 (function () {
   var APP = "https://modusapp.streamlit.app/";
+  var VERSION = 2;
 
   function aviso(msg) {
     alert("Modus value: " + msg);
@@ -139,7 +147,24 @@
     return t.length === 2 ? [t[0].trim(), t[1].trim()] : null;
   }
 
+  /* ¿Se cargo la pagina en otra direccion y has llegado aqui navegando?
+     Y cuantos segundos hace que se cargo. */
+  function carga() {
+    var r = { navegada: false, edad: 0 };
+    try {
+      var nav = performance.getEntriesByType("navigation")[0];
+      if (nav && nav.name) {
+        var a = document.createElement("a");
+        a.href = nav.name;
+        r.navegada = a.pathname !== location.pathname;
+      }
+      r.edad = Math.round(performance.now() / 1000);
+    } catch (e) {}
+    return r;
+  }
+
   try {
+    var cg = carga();
     var m = location.pathname.match(/\/match\/(\d+)/);
     var idUrl = m ? m[1] : null;
     var pant = leerPantalla(idUrl);
@@ -148,8 +173,11 @@
                buscarPartido(estadoDeScripts(), idPartido);
     if (dato && pant.matchId && dato.id !== String(pant.matchId)) dato = null;  /* otro partido */
 
-    var mercados = [], vistos = {}, fuente, enPantalla = [];
-    if (dato) {
+    var mercados = [], vistos = {}, fuente, enPantalla = [], nEstado = 0;
+    /* Llegaste navegando y se ven cuotas: el estado es de la pagina
+       anterior; de el solo se usan los nombres y la hora */
+    var usarEstado = dato && !(cg.navegada && pant.n);
+    if (usarEstado) {
       /* Estructura del estado; cuotas de la pantalla cuando se ven (al dia) */
       var st = dato.st, p = dato.p, bets = lista(p.bets);
       for (var i = 0; i < bets.length; i++) {
@@ -163,7 +191,10 @@
           var c = vp ? vp[1] : cuota(st.odds && st.odds[outs[j]]);
           if (o && c) sal.push([String(o.label || ""), String(o.code || ""), c]);
         }
-        if (sal.length) mercados.push([String(b.betTitle || ""), sal]);
+        if (sal.length) {
+          mercados.push([String(b.betTitle || ""), sal]);
+          if (!enPant) nEstado++;
+        }
         vistos[String(bets[i])] = 1;
       }
       fuente = "pagina";
@@ -179,7 +210,7 @@
       enPantalla.push([mp.titulo, sp]);
     }
     mercados = enPantalla.concat(mercados);
-    if (!dato) fuente = "pantalla";
+    if (!usarEstado) fuente = "pantalla";
 
     var nombres = dato ? [dato.p.competitor1Name, dato.p.competitor2Name] : nombresDelTitulo();
     if (!mercados.length || !nombres || !nombres[0] || !nombres[1]) {
@@ -191,7 +222,8 @@
       v: 1, id: String(idPartido || ""),
       c1: String(nombres[0]), c2: String(nombres[1]),
       t: dato ? (dato.p.matchStart || 0) : 0, s: dato ? String(dato.p.status || "") : "",
-      h: Math.round(Date.now() / 1000), f: fuente, m: mercados
+      h: Math.round(Date.now() / 1000), f: fuente, m: mercados,
+      b: VERSION, e: cg.edad, ne: nEstado
     };
     var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(datos))))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

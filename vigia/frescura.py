@@ -31,6 +31,19 @@ def _stats(jugador, stats_hoy):
     return None
 
 
+def _juega(jugador, p):
+    return _es(jugador, p["j1"]) or _es(jugador, p["j2"])
+
+
+def partido_en_cartel(partidos, j1, j2):
+    """El partido j1-j2 en el cartel de la jornada: el primero de la pareja
+    sin terminar (si se repitiera la pareja), o el ultimo si ya estan todos
+    terminados. None si no esta."""
+    de_la_pareja = [p for p in partidos if _juega(j1, p) and _juega(j2, p)]
+    pendientes = [p for p in de_la_pareja if p["estado"] != "terminado"]
+    return (pendientes[0] if pendientes else de_la_pareja[-1]) if de_la_pareja else None
+
+
 def partido_anterior(partidos, j1, j2, stats_hoy):
     """Para cada jugador del partido j1-j2, si los datos incluyen su partido
     anterior de la jornada.
@@ -42,17 +55,11 @@ def partido_anterior(partidos, j1, j2, stats_hoy):
     texto (frase para mostrar), anterior (partido o None), jugados (partidos
     terminados de hoy) y en_datos (los que cuentan sus estadisticas).
     """
-    def juega(jugador, p):
-        return _es(jugador, p["j1"]) or _es(jugador, p["j2"])
-
-    # El partido en el cartel: el primero de la pareja sin terminar (si se
-    # repite la pareja), o el ultimo si ya estan todos terminados
-    de_la_pareja = [p for p in partidos if juega(j1, p) and juega(j2, p)]
-    pendientes = [p for p in de_la_pareja if p["estado"] != "terminado"]
-    actual = (pendientes[0] if pendientes else de_la_pareja[-1])["orden"] if de_la_pareja else None
+    p_actual = partido_en_cartel(partidos, j1, j2)
+    actual = p_actual["orden"] if p_actual else None
     salida = []
     for jugador in (j1, j2):
-        suyos = [p for p in partidos if juega(jugador, p)]
+        suyos = [p for p in partidos if _juega(jugador, p)]
         if actual is not None:
             previos = [p for p in suyos if p["orden"] < actual]
         else:

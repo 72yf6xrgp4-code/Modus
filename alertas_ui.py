@@ -29,7 +29,7 @@ from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, HOJA_WINAMAX,
                             filas_a_dicts, gastado_del_dia, num,
                             resumen_apuestas, beneficio_fila, importe_apostado)
 from vigia.registro import (beneficio_real, por_mercado, por_mercado_y_volatilidad,
-                            tope_del_dia)
+                            por_numero_partido, tope_del_dia)
 from vigia.reglas import TOPE_DIARIO
 
 
@@ -84,14 +84,14 @@ def anadir_alerta(fila):
     return True, ""
 
 
-def _asegurar_cabecera(ws):
+def _asegurar_cabecera(ws, columnas=COLUMNAS_ALERTAS):
     """Si la hoja tiene la cabecera de una version anterior (le faltan
-    columnas nuevas del final, como importe_real), la completa."""
+    columnas nuevas del final, como importe_real o n_partido), la completa."""
     cab = ws.row_values(1)
-    if cab != COLUMNAS_ALERTAS and COLUMNAS_ALERTAS[:len(cab)] == cab:
-        if ws.col_count < len(COLUMNAS_ALERTAS):
-            ws.add_cols(len(COLUMNAS_ALERTAS) - ws.col_count)
-        ws.update(range_name="A1", values=[COLUMNAS_ALERTAS])
+    if cab != columnas and columnas[:len(cab)] == cab:
+        if ws.col_count < len(columnas):
+            ws.add_cols(len(columnas) - ws.col_count)
+        ws.update(range_name="A1", values=[columnas])
 
 
 def actualizar_campos(fila, campos):
@@ -171,6 +171,7 @@ def anadir_winamax(filas):
     if ws is None:
         return False, err
     try:
+        _asegurar_cabecera(ws, COLUMNAS_WINAMAX)
         ws.append_rows([[f.get(c, "") for c in COLUMNAS_WINAMAX] for f in filas],
                        value_input_option="RAW")
     except Exception as e:
@@ -282,38 +283,33 @@ class _HojaApp:
 
     def __init__(self, ws_alertas, ws_winamax):
         self.ws_alertas, self.ws_winamax = ws_alertas, ws_winamax
-        self._res = []
+        self._cambios = []
 
     def alertas(self):
         return filas_a_dicts(self.ws_alertas.get_all_values())
 
-    def actualizar_resultado(self, n_fila, resultado, beneficio):
-        self._res.append((n_fila, resultado, round(beneficio, 2)))
+    def actualizar_alerta(self, n_fila, campos):
+        self._cambios.append((n_fila, campos))
 
     def filas_winamax(self):
         return filas_a_dicts(self.ws_winamax.get_all_values()) if self.ws_winamax else []
 
-    def resultados_winamax(self, cambios):
-        from gspread.utils import rowcol_to_a1
-        col = COLUMNAS_WINAMAX.index("resultado") + 1
-        self.ws_winamax.batch_update(
-            [{"range": rowcol_to_a1(n, col), "values": [[r]]} for n, r in cambios],
-            value_input_option="RAW")
+    def actualizar_winamax(self, cambios):
+        from vigia.hoja import _celdas
+        _asegurar_cabecera(self.ws_winamax, COLUMNAS_WINAMAX)
+        self.ws_winamax.batch_update(_celdas(COLUMNAS_WINAMAX, cambios),
+                                     value_input_option="RAW")
 
     def log(self, fila):
         pass
 
     def volcar(self):
-        from gspread.utils import rowcol_to_a1
-        if not self._res:
+        from vigia.hoja import _celdas
+        if not self._cambios:
             return
-        c_res = COLUMNAS_ALERTAS.index("resultado") + 1
-        c_ben = COLUMNAS_ALERTAS.index("beneficio") + 1
-        datos = []
-        for n, r, b in self._res:
-            datos += [{"range": rowcol_to_a1(n, c_res), "values": [[r]]},
-                      {"range": rowcol_to_a1(n, c_ben), "values": [[b]]}]
-        self.ws_alertas.batch_update(datos, value_input_option="RAW")
+        _asegurar_cabecera(self.ws_alertas)
+        self.ws_alertas.batch_update(_celdas(COLUMNAS_ALERTAS, self._cambios),
+                                     value_input_option="RAW")
 
 
 def _pendientes(filas):
@@ -432,6 +428,7 @@ def render_alertas():
             _botones(f, f["_fila"])
     _evolucion(filas)
     _por_mercado(filas)
+    _por_numero_partido(filas)
     if anteriores:
         with st.expander(f"📋 Todas las apuestas anteriores ({len(anteriores)})"):
             st.dataframe(_tabla(anteriores), use_container_width=True, hide_index=True)
@@ -555,6 +552,34 @@ def _por_mercado(filas):
                    "más irregular del partido.")
 
 
+def _por_numero_partido(filas):
+    """¿Acierta mas el modelo cuanto mas avanzada va la jornada?"""
+    grupos = por_numero_partido(filas)
+    if not grupos:
+        return
+    st.markdown("#### 🔢 Por número de partido de la jornada")
+    st.caption("Las apuestas con value según el número de partido de la jornada "
+               "(1.º a 15.º). En los primeros, los jugadores aún no han jugado ese "
+               "día; en los últimos llevan 3-4 partidos y la forma de hoy pesa más. "
+               "**Fiable** = el acierto real se parece a lo que decía el modelo.")
+    tabla = []
+    for g in grupos:
+        t, r = g["todas"], g["reales"]
+        dif = (t["acierto"] - g["p_media"]) if t["acierto"] is not None and g["p_media"] else None
+        tabla.append({
+            "Partido": g["tramo"], "Apuestas": t["n"], "Liquidadas": t["liq"],
+            "El modelo daba": _pct(g["p_media"]), "Acierto real": _pct(t["acierto"]),
+            "Diferencia": "—" if dif is None else f"{dif*100:+.1f} pts".replace(".", ","),
+            "Beneficio": _eur(t["beneficio"]), "ROI": _pct(t["roi"]),
+            "Beneficio real": _eur(r["beneficio"]), "ROI real": _pct(r["roi"]),
+        })
+    st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
+    if any(g["tramo"] == "sin dato" for g in grupos):
+        st.caption("«sin dato»: apuestas de antes de guardar el número de partido (o de "
+                   "partidos que no estaban en la hoja). Las de esta semana se rellenan "
+                   "solas al apuntar los resultados.")
+
+
 def _estadisticas_winamax():
     """Cuotas de Winamax guardadas con el boton, frente al modelo."""
     st.markdown("#### 🌐 Winamax frente al modelo")
@@ -579,7 +604,8 @@ def _estadisticas_winamax():
             return "—"
         return (f"{v*100:+.1f} %" if signo else f"{v*100:.1f} %").replace(".", ",")
 
-    t1, t2, t3 = st.tabs(["Por edge", "Modelo vs Winamax", "Margen de Winamax"])
+    t1, t2, t4, t3 = st.tabs(["Por edge", "Modelo vs Winamax", "Por nº de partido",
+                              "Margen de Winamax"])
     with t1:
         st.caption("Si hubieras apostado 1 € a TODAS las cuotas leídas, según el edge "
                    "que daba el modelo. Sirve para ver a partir de qué edge gana.")
@@ -606,6 +632,22 @@ def _estadisticas_winamax():
                 use_container_width=True, hide_index=True)
         else:
             st.info("Aún no hay selecciones con resultado.")
+    with t4:
+        st.caption("Todas las cuotas leídas con resultado, según el número de partido de "
+                   "la jornada: ¿estima mejor el modelo cuando los jugadores llevan más "
+                   "partidos ese día? Brier: más bajo, mejor. «1 € a edge ≥ 20 %»: lo "
+                   "que habría dado tu regla.")
+        if e["partidos"]:
+            st.dataframe(pd.DataFrame([{
+                "Partido": p["tramo"], "Selecciones": p["n"],
+                "Brier modelo": f"{p['brier_modelo']:.3f}".replace(".", ","),
+                "Brier Winamax": f"{p['brier_winamax']:.3f}".replace(".", ","),
+                "El modelo daba": pct(p["p_media"]), "Acierto real": pct(p["acierto"]),
+                "Apuestas (edge ≥ 20 %)": p["apuestas"],
+                "Beneficio": _eur(p["ap_beneficio"]), "ROI": pct(p["ap_roi"], True)}
+                for p in e["partidos"]]), use_container_width=True, hide_index=True)
+        else:
+            st.info("Aún no hay selecciones con resultado.")
     with t3:
         st.caption("Lo que se queda Winamax en cada mercado: suma de 1/cuota de todas "
                    "las salidas menos 1. Cuanto más alto, peores cuotas.")
@@ -618,6 +660,7 @@ def _estadisticas_winamax():
 def _instalar_boton():
     """Instrucciones y codigo del marcador "Modus value"."""
     from pathlib import Path
+    from vigia.boton import VERSION_BOTON
     ruta = Path(__file__).resolve().parent / "boton" / "marcador.txt"
     try:
         codigo = ruta.read_text(encoding="utf-8").strip()
@@ -625,6 +668,9 @@ def _instalar_boton():
         return
     with st.expander("🔖 Instalar el botón «Modus value»"):
         st.markdown(
+            f"**Versión {VERSION_BOTON}.** Si ya lo tenías instalado y la app te "
+            "avisa de que es antiguo, sustituye la dirección (URL) del marcador por "
+            "este código.\n\n"
             "Lee **solo** las cuotas de la página de Winamax que tienes abierta "
             "y abre aquí Value Bets con el partido y las cuotas. No pide nada a "
             "Winamax, no inicia sesión, no toca el boleto y no apuesta.\n\n"

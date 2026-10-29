@@ -18,6 +18,13 @@ from vigia.registro import (HOJA_ALERTAS, HOJA_LOG, HOJA_CUOTAS, HOJA_WINAMAX,
 log = logging.getLogger(__name__)
 
 
+def _celdas(columnas, cambios):
+    """[(n_fila, {columna: valor})] -> datos de batch_update de gspread."""
+    from gspread.utils import rowcol_to_a1
+    return [{"range": rowcol_to_a1(n, columnas.index(c) + 1), "values": [[v]]}
+            for n, campos in cambios for c, v in campos.items()]
+
+
 class HojaGoogle:
     def __init__(self, ruta_credenciales, sheet_id, sheet_id_datos=""):
         import gspread
@@ -83,12 +90,10 @@ class HojaGoogle:
         self.ws_alertas.append_row([fila.get(c, "") for c in COLUMNAS_ALERTAS],
                                    value_input_option="RAW")
 
-    def actualizar_resultado(self, n_fila, resultado, beneficio):
-        cab = COLUMNAS_ALERTAS
-        c_res = cab.index("resultado") + 1
-        c_ben = cab.index("beneficio") + 1
-        self.ws_alertas.update_cell(n_fila, c_res, resultado)
-        self.ws_alertas.update_cell(n_fila, c_ben, round(beneficio, 2))
+    def actualizar_alerta(self, n_fila, campos):
+        """Cambia varias celdas de una fila de alertas en una peticion."""
+        self.ws_alertas.batch_update(_celdas(COLUMNAS_ALERTAS, [(n_fila, campos)]),
+                                     value_input_option="RAW")
 
     def anadir_cuotas(self, filas):
         self.ws_cuotas.append_rows([[f.get(c, "") for c in COLUMNAS_CUOTAS]
@@ -97,13 +102,10 @@ class HojaGoogle:
     def filas_winamax(self):
         return filas_a_dicts(self.ws_winamax.get_all_values())
 
-    def resultados_winamax(self, cambios):
-        """[(n_fila, 'ganada'|'perdida')] en una sola peticion."""
-        from gspread.utils import rowcol_to_a1
-        col = COLUMNAS_WINAMAX.index("resultado") + 1
-        self.ws_winamax.batch_update(
-            [{"range": rowcol_to_a1(n, col), "values": [[r]]} for n, r in cambios],
-            value_input_option="RAW")
+    def actualizar_winamax(self, cambios):
+        """[(n_fila, {columna: valor})] en una sola peticion."""
+        self.ws_winamax.batch_update(_celdas(COLUMNAS_WINAMAX, cambios),
+                                     value_input_option="RAW")
 
     def log(self, fila):
         self._log_pendiente.append([fila.get(c, "") for c in COLUMNAS_LOG])
@@ -138,9 +140,8 @@ class HojaMemoria:
     def anadir_alerta(self, fila):
         self._alertas.append(dict(fila))
 
-    def actualizar_resultado(self, n_fila, resultado, beneficio):
-        self._alertas[n_fila - 2]["resultado"] = resultado
-        self._alertas[n_fila - 2]["beneficio"] = round(beneficio, 2)
+    def actualizar_alerta(self, n_fila, campos):
+        self._alertas[n_fila - 2].update(campos)
 
     def anadir_cuotas(self, filas):
         self.cuotas.extend(dict(f) for f in filas)
@@ -148,9 +149,9 @@ class HojaMemoria:
     def filas_winamax(self):
         return [dict(f, _fila=i + 2) for i, f in enumerate(self._winamax)]
 
-    def resultados_winamax(self, cambios):
-        for n, r in cambios:
-            self._winamax[n - 2]["resultado"] = r
+    def actualizar_winamax(self, cambios):
+        for n, campos in cambios:
+            self._winamax[n - 2].update(campos)
 
     def log(self, fila):
         self.logs.append(dict(fila))
@@ -178,8 +179,8 @@ class HojaSoloLectura:
     def anadir_alerta(self, fila):
         self._memoria.anadir_alerta(fila)
 
-    def actualizar_resultado(self, n_fila, resultado, beneficio):
-        log.info("[simular] fila %s -> %s (%.2f)", n_fila, resultado, beneficio)
+    def actualizar_alerta(self, n_fila, campos):
+        log.info("[simular] fila %s -> %s", n_fila, campos)
 
     def anadir_cuotas(self, filas):
         self._memoria.anadir_cuotas(filas)
@@ -187,8 +188,8 @@ class HojaSoloLectura:
     def filas_winamax(self):
         return self._hoja.filas_winamax()
 
-    def resultados_winamax(self, cambios):
-        log.info("[simular] %d cuotas de Winamax con resultado", len(cambios))
+    def actualizar_winamax(self, cambios):
+        log.info("[simular] %d cuotas de Winamax actualizadas", len(cambios))
 
     def log(self, fila):
         self._memoria.log(fila)

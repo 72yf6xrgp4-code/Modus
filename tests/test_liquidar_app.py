@@ -13,6 +13,11 @@ class WS:
     def get_all_values(self):
         return self.valores
 
+    def row_values(self, n):
+        return self.valores[n - 1]
+
+    col_count = 40
+
     def batch_update(self, datos, value_input_option=None):
         from gspread.utils import a1_to_rowcol
         for d in datos:
@@ -37,4 +42,8 @@ def test_la_app_apunta_resultados(monkeypatch):
     hoja.volcar()
     fila = dict(zip(COLUMNAS_ALERTAS, ws_a.valores[1]))
     assert (fila["resultado"], fila["beneficio"]) == ("ganada", 10.0)   # con lo apostado
-    assert dict(zip(COLUMNAS_WINAMAX, ws_w.valores[1]))["resultado"] == "perdida"
+    wm = dict(zip(COLUMNAS_WINAMAX, ws_w.valores[1]))
+    assert wm["resultado"] == "perdida"
+    # de paso, el numero de partido de la jornada (para las estadisticas)
+    assert (fila["n_partido"], fila["jornada"]) == (1, "Grupo C Jueves")
+    assert wm["n_partido"] == 1

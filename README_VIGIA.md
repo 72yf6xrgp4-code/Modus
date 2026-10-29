@@ -207,3 +207,22 @@ diciendo qué partido falta: pulsa «Ejecutar actualización», espera y
 «Refrescar datos» antes de apostar. Si está todo, dice con qué partido anterior
 de cada uno calcula («✅ Datos al día»). Fuera de jornada no se comprueba (se
 usa el Resumen Semanal).
+
+**Versión del botón.** El marcador guarda una copia del código y no se
+actualiza solo. Cada vez que el botón cambia sube su versión (ahora la 2) y,
+si pulsas uno antiguo, la app te avisa de que lo reinstales (🎟️ Apuestas →
+«Instalar el botón Modus value»: copia el código y pégalo como URL del
+marcador). Desde la versión 2, si llegas al partido navegando dentro de
+Winamax (sin recargar), el botón solo usa las cuotas que se ven en pantalla:
+las del estado de carga serían de la página anterior. Si la página lleva más
+de 10 minutos abierta y algún mercado no se veía, la app avisa de que esas
+cuotas pueden haber cambiado.
+
+**Por número de partido de la jornada** (🎟️ Apuestas): cada apuesta y cada
+cuota guardada con el botón llevan el número de partido de la jornada (1.º a
+15.º; columnas `jornada` y `n_partido`). La tabla «🔢 Por número de partido»
+compara, por tramos (1.º-3.º, 4.º-6.º…), lo que daba el modelo con el acierto
+real, y el beneficio; en «Winamax frente al modelo» → «Por nº de partido», el
+Brier del modelo y de Winamax. Sirve para ver si el modelo es más fiable
+cuando los jugadores llevan más partidos ese día. Las filas de esta semana que
+no lo tenían se rellenan solas al apuntar los resultados.

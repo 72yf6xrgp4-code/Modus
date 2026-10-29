@@ -1,11 +1,13 @@
 // Ejecuta el marcador (boton/marcador.txt) en una pagina local servida como
 // si fuera winamax.es y escribe en stdout {alerta, url}. Todas las
 // peticiones se interceptan: no sale nada hacia Winamax.
-// Uso: node probar_marcador.js <html> <url_simulada> <marcador.txt> [borrar_global]
+// Uso: node probar_marcador.js <html> <url_simulada> <marcador.txt> [borrar_global] [ruta_navegada]
+// ruta_navegada: simula que has llegado a esa ruta navegando dentro de
+// Winamax (history.pushState), sin recargar.
 const fs = require("fs");
 const { chromium } = require("playwright");
 (async () => {
-  const [html, url, marcadorTxt, borrar] = process.argv.slice(2);
+  const [html, url, marcadorTxt, borrar, navegada] = process.argv.slice(2);
   const cuerpo = fs.readFileSync(html, "utf-8");
   const b = await chromium.launch();
   const p = await b.newPage();
@@ -15,10 +17,11 @@ const { chromium } = require("playwright");
   let alerta = null, abierta = null;
   p.on("dialog", async (d) => { alerta = d.message(); await d.dismiss(); });
   await p.goto(url);
-  await p.evaluate((borrar) => {
+  await p.evaluate(([borrar, navegada]) => {
     window.open = (u) => { window.__abierta = u; return {}; };
     if (borrar === "1") { try { delete window.PRELOADED_STATE; } catch (e) {} window.PRELOADED_STATE = undefined; }
-  }, borrar || "0");
+    if (navegada) history.pushState({}, "", navegada);
+  }, [borrar || "0", navegada || ""]);
   const codigo = decodeURIComponent(fs.readFileSync(marcadorTxt, "utf-8").trim().replace(/^javascript:/, ""));
   await p.evaluate(codigo);
   await p.waitForTimeout(200);

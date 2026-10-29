@@ -16,6 +16,9 @@ from vigia.mercados import asignar
 from vigia.nombres import emparejar, mismo_jugador, nombre_winamax
 
 MAX_WM = 60_000   # caracteres; una pagina de partido normal ocupa ~3-10 mil
+# Version del marcador (VERSION en boton/modus_value.js). Si llega una mas
+# vieja, la app pide reinstalarlo: el marcador guarda una copia del codigo.
+VERSION_BOTON = 2
 
 
 class DatosNoValidos(ValueError):
@@ -59,7 +62,19 @@ def decodificar(wm):
             # "pagina": estado de la pagina + cuotas al dia de la pantalla;
             # "pantalla": solo lo que se veia (llegaste navegando)
             "f": str(d.get("f") or "pagina"),
+            # version del marcador (los antiguos no la mandan: 1), segundos
+            # desde que se cargo la pagina y mercados cuyas cuotas salen del
+            # estado de carga (no se veian en pantalla)
+            "b": _entero(d.get("b"), 1), "e": _entero(d.get("e"), 0),
+            "ne": _entero(d.get("ne"), 0),
             "mercados": mercados}
+
+
+def _entero(v, defecto):
+    try:
+        return int(v) if v is not None else defecto
+    except (TypeError, ValueError):
+        return defecto
 
 
 def preparar(datos, nombres_db, cartel=()):

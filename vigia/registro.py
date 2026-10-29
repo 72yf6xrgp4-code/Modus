@@ -23,6 +23,9 @@ COLUMNAS_ALERTAS = [
     # Lo que de verdad apostaste si cambiaste el importe a mano (vacio = el
     # recomendado). Al final para no descolocar las filas antiguas.
     "importe_real",
+    # Numero de partido de la jornada (1, 2, ... 15), para ver si el modelo
+    # acierta mas cuando los jugadores llevan mas partidos ese dia
+    "n_partido",
 ]
 COLUMNAS_LOG = ["fecha", "hora", "tipo", "partido", "detalle"]
 
@@ -46,6 +49,7 @@ COLUMNAS_WINAMAX = [
     "vol_j2", "titulo", "salida", "mercado", "seleccion", "cuota", "p_modelo",
     "cuota_justa", "edge", "verde", "importe", "fuente", "resultado",
     "seleccion_json",
+    "jornada", "n_partido",
 ]
 
 ESTADO_PENDIENTE = "pendiente"
@@ -224,6 +228,10 @@ def _importe_con_volatilidad(f):
     return reglas.bajar_escalon(imp) if req["rebaja"] else imp
 
 
+def _vacio():
+    return {"n": 0, "liq": 0, "ganadas": 0, "apostado": 0.0, "beneficio": 0.0}
+
+
 def _acumular(g, f, imp):
     g["n"] += 1
     if f.get("resultado") in ("ganada", "perdida"):
@@ -278,6 +286,56 @@ def por_mercado(filas, con_volatilidad=False):
     return salida, excluidas
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# POR NUMERO DE PARTIDO DE LA JORNADA
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Cada jornada tiene 15 partidos (6 jugadores, todos contra todos): en los
+# primeros, la forma de hoy casi no tiene datos; en los ultimos, cada
+# jugador lleva 3-4 partidos ese dia.
+TRAMOS_PARTIDO = [(1, 3, "1.º-3.º"), (4, 6, "4.º-6.º"), (7, 9, "7.º-9.º"),
+                  (10, 12, "10.º-12.º"), (13, None, "13.º o más")]
+SIN_NUMERO = "sin dato"
+
+
+def tramo_partido(fila):
+    """Tramo de TRAMOS_PARTIDO del numero de partido de la fila."""
+    n = int(num(fila.get("n_partido")) or 0)
+    for desde, hasta, nombre in TRAMOS_PARTIDO:
+        if n >= desde and (hasta is None or n <= hasta):
+            return nombre
+    return SIN_NUMERO
+
+
+def _orden_tramos(grupos):
+    return [t[2] for t in TRAMOS_PARTIDO if t[2] in grupos] + (
+        [SIN_NUMERO] if SIN_NUMERO in grupos else [])
+
+
+def por_numero_partido(filas):
+    """Apuestas con value por numero de partido de la jornada: 'todas' (con
+    el importe recomendado), 'reales' (las apostadas, con lo apostado) y
+    'p_media' (lo que daba el modelo de media en las liquidadas, para
+    compararlo con el acierto real: cuanto mas cerca, mas fiable)."""
+    grupos = {}
+    for f in filas:
+        if f.get("tipo_aviso") != AVISO_APUESTA:
+            continue
+        g = grupos.setdefault(tramo_partido(f), {"todas": _vacio(), "reales": _vacio(), "p": 0.0})
+        _acumular(g["todas"], f, num(f.get("importe")))
+        if f.get("resultado") in ("ganada", "perdida"):
+            g["p"] += num(f.get("p_modelo"))
+        if f.get("estado") == ESTADO_APOSTADA:
+            _acumular(g["reales"], f, importe_apostado(f))
+    salida = []
+    for t in _orden_tramos(grupos):
+        g = grupos[t]
+        liq = g["todas"]["liq"]
+        salida.append({"tramo": t, "todas": _cerrar(g["todas"]), "reales": _cerrar(g["reales"]),
+                       "p_media": g["p"] / liq if liq else None})
+    return salida
+
+
 def por_mercado_y_volatilidad(filas):
     """Todas las apuestas con value, por mercado y nivel de volatilidad del
     partido: {(mercado, nivel): acumulado}."""
@@ -322,6 +380,9 @@ def estadisticas_winamax(filas):
                  (menor = mejor) y quien acierta mas
       tramos     por tramo de edge: apuestas de 1 EUR a todas, aciertos, ROI
       mercados   por mercado, solo con edge >= 20 % (tu regla): n, ROI
+      partidos   por numero de partido de la jornada (liquidadas): Brier del
+                 modelo y de Winamax, probabilidad media del modelo frente al
+                 acierto real, y 1 EUR a las de edge >= 20 %
     """
     filas = _ultimas_lecturas(filas)
     resumen = {"lecturas": len({f.get("lectura") for f in filas}),
@@ -345,7 +406,7 @@ def estadisticas_winamax(filas):
               for m, v in sorted(margen.items())]
 
     # Precision: Brier del modelo y de Winamax en las liquidadas
-    prec = {}
+    prec, por_n = {}, {}
     for f in filas:
         if f.get("resultado") not in ("ganada", "perdida") or f.get("p_modelo") in ("", None):
             continue
@@ -358,6 +419,18 @@ def estadisticas_winamax(filas):
             g["n"] += 1
             g["modelo"] += (num(f["p_modelo"]) - y) ** 2
             g["winamax"] += (q - y) ** 2
+        g = por_n.setdefault(tramo_partido(f), {"n": 0, "modelo": 0.0, "winamax": 0.0,
+                                                "p": 0.0, "ganadas": 0,
+                                                "ap": 0, "ap_ganadas": 0, "ap_beneficio": 0.0})
+        g["n"] += 1
+        g["modelo"] += (num(f["p_modelo"]) - y) ** 2
+        g["winamax"] += (q - y) ** 2
+        g["p"] += num(f["p_modelo"])
+        g["ganadas"] += int(y)
+        if num(f.get("edge")) >= 0.20:   # tu regla: apostar 1 EUR
+            g["ap"] += 1
+            g["ap_ganadas"] += int(y)
+            g["ap_beneficio"] += (num(f["cuota"]) - 1.0) if y else -1.0
     precision = []
     for m in sorted(prec, key=lambda k: (k == "TOTAL", k)):
         g = prec[m]
@@ -392,6 +465,16 @@ def estadisticas_winamax(filas):
         return {"nombre": nombre, "n": g["n"], "ganadas": g["ganadas"],
                 "beneficio": g["beneficio"], "roi": g["beneficio"] / g["n"] if g["n"] else None}
 
+    partidos = []
+    for t in _orden_tramos(por_n):
+        g = por_n[t]
+        partidos.append({"tramo": t, "n": g["n"], "brier_modelo": g["modelo"] / g["n"],
+                         "brier_winamax": g["winamax"] / g["n"], "p_media": g["p"] / g["n"],
+                         "acierto": g["ganadas"] / g["n"], "apuestas": g["ap"],
+                         "ap_ganadas": g["ap_ganadas"], "ap_beneficio": g["ap_beneficio"],
+                         "ap_roi": g["ap_beneficio"] / g["ap"] if g["ap"] else None})
+
     return {"resumen": resumen, "margen": margen, "precision": precision,
+            "partidos": partidos,
             "tramos": [cerrar(t[2], tramos[t[2]]) for t in TRAMOS_EDGE],
             "mercados": [cerrar(m, g) for m, g in sorted(mercados.items())]}

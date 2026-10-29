@@ -23,7 +23,7 @@ from helpers import es_admin, fecha_jornada_madrid
 from modelo.motor import calcular_partido, probabilidad
 from modelo.volatilidad import nivel_volatilidad
 from vigia import reglas
-from vigia.boton import (DatosNoValidos, casilla, decodificar, preparar,
+from vigia.boton import (VERSION_BOTON, DatosNoValidos, casilla, decodificar, preparar,
                          seleccion_de_casilla)
 from vigia.cuotas import evaluar_cuotas
 from vigia.registro import estado_partido, gastado_del_dia, tope_del_dia
@@ -134,6 +134,25 @@ def comprobar_partido_anterior(j1_sel, j2_sel):
     return jornada, partido_anterior(partidos_de_jornada(lineas), j1_sel, j2_sel, stats_hoy)
 
 
+def numero_partido(j1_sel, j2_sel):
+    """(jornada, numero de partido 1..15) del partido en el cartel de hoy,
+    o ("", "") si no esta. Se guarda con la apuesta y con las cuotas de
+    Winamax para las estadisticas por numero de partido."""
+    try:
+        from data_loading import _descargar_csv_jornada
+        from modelo.datos import jornadas_del_dia, partidos_de_jornada
+        from vigia.frescura import partido_en_cartel
+        from vigia.horario import dia_jornada
+        for jornada in jornadas_del_dia(dia_jornada(datetime.now(MADRID))):
+            lineas = _descargar_csv_jornada(jornada)
+            p = partido_en_cartel(partidos_de_jornada(lineas), j1_sel, j2_sel) if lineas else None
+            if p:
+                return jornada, p["orden"] + 1
+    except Exception:
+        pass
+    return "", ""
+
+
 def _aviso_partido_anterior(j1_sel, j2_sel, completo):
     """Avisa si los datos aun no tienen el partido anterior de alguno de
     los dos jugadores (completo=False: solo una linea si falta algo)."""
@@ -192,6 +211,16 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
     else:
         st.caption(f"Leídas de la página de Winamax a las {leidas} "
                    f"(estado: {datos['s'] or '?'}), con las cuotas al día de la pantalla.")
+    if datos.get("b", 1) < VERSION_BOTON:
+        st.warning("🔖 Tu botón «Modus value» es una versión antigua (por eso a veces "
+                   "hay que recargar la página de Winamax). Reinstálalo: 🎟️ Apuestas → "
+                   "«Instalar el botón Modus value», copia el código y pégalo como "
+                   "dirección (URL) de tu marcador.")
+    elif datos.get("f") == "pagina" and datos.get("ne") and datos.get("e", 0) > 600:
+        st.warning(f"⏱️ {datos['ne']} mercados no se veían en pantalla: sus cuotas son "
+                   f"de cuando cargaste la página de Winamax (hace {datos['e'] // 60} min) "
+                   "y pueden haber cambiado. Desplázate hasta verlos (o recarga) y vuelve "
+                   "a pulsar el botón.")
     if datos["s"] and datos["s"].upper() != "PREMATCH":
         st.warning("⚠️ Winamax no lo marca como prepartido: tus reglas son solo prepartido.")
     if w["orden"] != "cartel":
@@ -434,6 +463,7 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
         "vol_j1": _vol_num(j1.get("volatilidad")), "vol_j2": _vol_num(j2.get("volatilidad")),
         "fuente": datos.get("f", ""), "resultado": "",
     }
+    base["jornada"], base["n_partido"] = numero_partido(j1_sel, j2_sel)
     filas = []
     for s in w["selecciones"]:
         p = probabilidad(calc, s["sel"])
@@ -479,6 +509,7 @@ def _guardar(f, estado, importe, importe_real, fecha, j1, j2, j1_sel, j2_sel):
         ok, error = marcar_estado(previa, estado, real)
     else:
         ahora = datetime.now(MADRID)
+        jornada, n_partido = numero_partido(j1_sel, j2_sel)
         gastado = gastado_del_dia(alertas or [], fecha)
         ok, error = anadir_alerta({
             "id": f"{fecha}-{j1_sel}-{j2_sel}-{f['texto']}", "fecha": fecha,
@@ -498,7 +529,7 @@ def _guardar(f, estado, importe, importe_real, fecha, j1, j2, j1_sel, j2_sel):
             "tipo_aviso": "apuesta",
             "inicio": (datetime.fromtimestamp(datos["t"], MADRID).strftime("%Y-%m-%d %H:%M")
                        if datos.get("t") else ""),
-            "match_id": datos.get("id", ""), "jornada": "",
+            "match_id": datos.get("id", ""), "jornada": jornada, "n_partido": n_partido,
             "orden_j1": w.get("orden", "cartel"),
             "seleccion_json": json.dumps(f["sel"], ensure_ascii=False),
         })
