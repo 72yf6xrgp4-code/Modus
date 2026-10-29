@@ -126,9 +126,15 @@ def resumen_historico(filas, antes_de=None, ref=None):
         nombre = str(f.get("Jugador", "")).strip()
         if not nombre or (antes_de and fecha >= antes_de):
             continue
+        # Peso de la semana: sus partidos (o victorias + derrotas si la
+        # columna viene vacia; si tampoco, 1, con tal de que tenga datos)
         n = _numero(f.get("Partidos jugados"))
         if n <= 0:
-            continue
+            n = _numero(f.get("Victorias")) + _numero(f.get("Derrotas"))
+        if n <= 0:
+            if _numero(f.get("PR"), 100.0) <= 0:
+                continue
+            n = 1.0
         a = acum.setdefault(normalizar_nombre(nombre),
                             {"nombre_original": nombre, "n": 0.0, "semanas": 0, "suma": {},
                              "peso": {}})
@@ -152,24 +158,39 @@ def resumen_historico(filas, antes_de=None, ref=None):
     return salida
 
 
-def combinar_con_historico(jugadores, historico, nombres_extra=(), peso=PESO_HISTORICO):
+def _buscar(nombre, historico, por_nombre):
+    """Entrada del historico de un jugador: mismo nombre normalizado o, si
+    no, el que empareja (mismo apellido, otro orden, inicial...)."""
+    from vigia.nombres import emparejar
+    h = historico.get(normalizar_nombre(nombre))
+    if h:
+        return h
+    n = emparejar(nombre, list(por_nombre))
+    return por_nombre.get(n) if n else None
+
+
+def combinar_con_historico(jugadores, historico, nombres_extra=None, peso=PESO_HISTORICO):
     """Mezcla los datos de esta semana con el historico.
 
     jugadores: {nombre: datos} de esta semana (n_partidos = partidos de la
     semana). Para cada uno, el historico pesa peso / (peso + n_partidos).
-    nombres_extra: jugadores de hoy que aun no tienen datos esta semana: si
-    tienen historico, se anaden solo con el (peso 100 %).
-    Cada jugador lleva 'peso_historico' (0 si no tiene historico).
+    Los jugadores del historico que no estan esta semana se anaden solo con
+    el (peso 100 %); con nombres_extra, solo esos.
+    Cada jugador lleva 'peso_historico' (0 si no tiene historico),
+    'semanas_historico' y 'n_historico'.
     """
     salida = {}
     campos = [c for c, _ in COLUMNAS.values()]
+    por_nombre = {h["nombre_original"]: h for h in historico.values()}
+    usados = set()
     for k, d in (jugadores or {}).items():
         d = dict(d)
-        h = historico.get(normalizar_nombre(d.get("nombre_original") or k))
+        h = _buscar(d.get("nombre_original") or k, historico, por_nombre)
         if not h:
             d["peso_historico"] = 0.0
             salida[k] = d
             continue
+        usados.add(h["nombre_original"])
         n = max(0.0, _numero(d.get("n_partidos")))
         w = peso / (peso + n)
         for campo in campos:
@@ -178,17 +199,22 @@ def combinar_con_historico(jugadores, historico, nombres_extra=(), peso=PESO_HIS
             if vh <= 0:
                 continue
             d[campo] = vh if vs <= 0 else w * vh + (1.0 - w) * vs
-        d["peso_historico"] = w
+        d.update(peso_historico=w, semanas_historico=h.get("semanas", 0),
+                 n_historico=h.get("n_historico", 0))
         salida[k] = d
-    ya = {normalizar_nombre(d.get("nombre_original") or k) for k, d in salida.items()}
-    for nombre in nombres_extra or ():
-        clave = normalizar_nombre(nombre)
-        h = historico.get(clave)
-        if h and clave not in ya and h.get("PR", 0) > 0:
-            d = {c: h.get(c, 0.0) for c in campos}
-            d.update(nombre_original=h["nombre_original"], n_partidos=0, victorias=0, derrotas=0,
-                     volatilidad_hoja=h.get("volatilidad_hoja", 0.0),
-                     peso_historico=1.0, solo_historico=True)
-            salida[h["nombre_original"].lower()] = d
-            ya.add(clave)
+    if nombres_extra is None:
+        extra = [h for h in por_nombre.values() if h["nombre_original"] not in usados]
+    else:
+        extra = [h for h in (_buscar(n, historico, por_nombre) for n in nombres_extra)
+                 if h and h["nombre_original"] not in usados]
+    for h in extra:
+        if h.get("PR", 0) <= 0 or h["nombre_original"] in usados:
+            continue
+        d = {c: h.get(c, 0.0) for c in campos}
+        d.update(nombre_original=h["nombre_original"], n_partidos=0, victorias=0, derrotas=0,
+                 volatilidad_hoja=h.get("volatilidad_hoja", 0.0), peso_historico=1.0,
+                 solo_historico=True, semanas_historico=h.get("semanas", 0),
+                 n_historico=h.get("n_historico", 0))
+        salida[h["nombre_original"].lower()] = d
+        usados.add(h["nombre_original"])
     return salida

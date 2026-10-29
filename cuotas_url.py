@@ -192,6 +192,32 @@ def _aviso_partido_anterior(j1_sel, j2_sel, completo):
                    f"de hoy; la recomendada es ⚡ Forma reciente.")
 
 
+def render_info_historico(j1_sel, j2_sel, db):
+    """Debajo de los selectores de Value Bets: cuanto pesan las semanas
+    anteriores en los datos de cada jugador (o por que no se usan)."""
+    from vigia.nombres import emparejar
+    if st.session_state.get("vb_fuente", "Forma reciente") != "Forma reciente":
+        return
+    estado = st.session_state.get("_historico_estado") or {}
+    if estado.get("error"):
+        st.caption(f"📚 Sin semanas anteriores: {estado['error']}.")
+        return
+    por_nombre = {v.get("nombre_original"): v for v in db.values()}
+    partes = []
+    for nombre in (j1_sel, j2_sel):
+        d = por_nombre.get(emparejar(nombre, list(por_nombre)) or nombre) or {}
+        w = d.get("peso_historico") or 0
+        if d.get("solo_historico"):
+            partes.append(f"**{nombre}**: sin datos esta semana, solo sus semanas anteriores "
+                          f"({d.get('semanas_historico', 0)} sem.)")
+        elif w:
+            partes.append(f"**{nombre}**: semanas anteriores al {w*100:.0f} % "
+                          f"({d.get('semanas_historico', 0)} sem.)")
+        else:
+            partes.append(f"**{nombre}**: sin semanas anteriores guardadas")
+    st.caption("📚 " + " · ".join(partes))
+
+
 def _num(v):
     return f"{v:.2f}".replace(".", ",")
 

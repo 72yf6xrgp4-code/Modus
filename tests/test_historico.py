@@ -42,12 +42,14 @@ def _h(fecha, jugador, pr, partidos, vol="15", c180="0,8"):
 def test_resumen_historico_media_ponderada_y_sin_la_semana_actual():
     filas = [_h("2026-10-17", "Andy Baetens", "60", 10), _h("2026-10-24", "Andy Baetens", "66", 5),
              _h("2026-10-31", "Andy Baetens", "99", 5),        # esta semana: no cuenta
-             _h("2026-10-24", "Self", "55", 0),                 # sin partidos: no cuenta
+             dict(_h("2026-10-24", "Self", "55", ""), Victorias="3", Derrotas="2"),
+             _h("2026-10-24", "Nadie", "0", 0),                 # sin datos: no cuenta
              _h("2026-10-24", "Ross Smith", "58", 5, c180="8")]  # coma perdida: 0,8
     h = resumen_historico(filas, antes_de="2026-10-31")
     b = h["andy baetens"]
     assert b["PR"] == pytest.approx((60 * 10 + 66 * 5) / 15) and b["n_historico"] == 15
-    assert b["semanas"] == 2 and "self" not in h
+    assert b["semanas"] == 2 and "nadie" not in h
+    assert h["self"]["n_historico"] == 5          # sin 'Partidos jugados': V + D
     assert h["ross smith"]["lam_180"] == pytest.approx(0.8)
 
 
@@ -88,3 +90,17 @@ def test_el_vigia_usa_el_historico(monkeypatch):
     datos.refrescar(datetime(2026, 11, 2, 10, 20, tzinfo=M), forzar=True)
     assert {v["nombre_original"] for v in datos.jugadores.values()} == {"Andy Baetens", "Self"}
     assert datos.jugadores["andy baetens"]["PR"] == pytest.approx(62)
+
+
+def test_empareja_nombres_escritos_distinto_y_anade_a_todos():
+    """En el Historico el nombre puede venir en otro orden o abreviado; y
+    los jugadores sin datos esta semana se anaden aunque no esten en el
+    cartel de hoy (para poder elegirlos en Value Bets)."""
+    hist = {"baetens andy": {"nombre_original": "Baetens Andy", "PR": 70.0, "semanas": 3},
+            "ross smith": {"nombre_original": "Ross Smith", "PR": 58.0, "semanas": 1}}
+    semana = {"andy baetens": {"nombre_original": "Andy Baetens", "PR": 60.0, "n_partidos": 1}}
+    r = combinar_con_historico(semana, hist)
+    assert r["andy baetens"]["PR"] == pytest.approx(65.0)            # 50 % y 50 %
+    assert r["andy baetens"]["semanas_historico"] == 3
+    assert "baetens andy" not in r                                   # no se duplica
+    assert r["ross smith"]["solo_historico"] and r["ross smith"]["PR"] == 58

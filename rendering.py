@@ -1190,6 +1190,8 @@ def render_value_bets():
                       ("vic_", "180_", "mas_", "hcap_", "legs_"))]:
             del st.session_state[k]
     st.session_state["_vb_par"] = par_actual
+    from cuotas_url import render_info_historico
+    render_info_historico(j1_sel, j2_sel, db_jugadores)
     with col3:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔢 Calcular", type="primary", use_container_width=True, help="Calcular probabilidades"):

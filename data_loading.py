@@ -277,36 +277,35 @@ def cargar_forma_reciente():
     return _con_historico(base)
 
 
-def _nombres_de_hoy():
-    """Jugadores del cartel de la jornada en juego (o la proxima)."""
-    from modelo.datos import partidos_de_jornada
-    jornada = detectar_jornada_de_hoy(exigir_datos=False)
-    if not jornada:
-        try:
-            jornada = proxima_jornada()[0]
-        except Exception:
-            jornada = None
-    lineas = _descargar_csv_jornada(jornada) if jornada else []
-    nombres = set()
-    for p in partidos_de_jornada(lineas) if lineas else []:
-        nombres.update((p["j1"], p["j2"]))
-    return sorted(nombres)
-
-
 def _con_historico(base):
     """Mezcla los datos de esta semana con las semanas anteriores de la
     pestana 'Historico', con muy poco peso (modelo/historico.py). Los
     jugadores de hoy sin datos esta semana salen solo con su historico."""
     from modelo.historico import combinar_con_historico, resumen_historico
+    estado = {"jugadores": 0, "error": ""}
     try:
         from predicciones import _fecha_sabado_de_la_semana
-        historico = resumen_historico(_filas_historico(), antes_de=_fecha_sabado_de_la_semana(),
-                                      ref=referencia_volatilidad_app())
-        if not historico:
+        filas = _filas_historico()
+        if not filas:
+            estado["error"] = "la pestaña Historico está vacía o no se puede leer"
             return base
-        return combinar_con_historico(base, historico, nombres_extra=_nombres_de_hoy())
-    except Exception:
+        historico = resumen_historico(filas, antes_de=_fecha_sabado_de_la_semana(),
+                                      ref=referencia_volatilidad_app())
+        estado["jugadores"] = len(historico)
+        if not historico:
+            estado["error"] = "el Historico no tiene semanas anteriores con datos"
+            return base
+        # Todos los jugadores del historico: los que no tienen datos esta
+        # semana salen solo con el (asi se pueden elegir en Value Bets)
+        return combinar_con_historico(base, historico)
+    except Exception as e:
+        estado["error"] = f"{type(e).__name__}: {e}"
         return base
+    finally:
+        try:
+            st.session_state["_historico_estado"] = estado
+        except Exception:
+            pass
 
 
 @st.cache_data(ttl=30, show_spinner="Cargando datos del Sheet...")
