@@ -9,8 +9,9 @@ from vigia.registro import estadisticas_winamax
 
 
 def _f(lectura, titulo, salida, cuota, p=None, edge=None, resultado="", mercado="Ganador",
-       sel=None, j1="Andy Baetens", j2="Derek Coulson"):
+       sel=None, j1="Andy Baetens", j2="Derek Coulson", previos=(3, 4)):
     return {"fecha": "2026-11-05", "lectura": lectura, "match_id": "900", "j1": j1, "j2": j2,
+            "previos_j1": previos[0], "previos_j2": previos[1],
             "titulo": titulo, "salida": salida, "cuota": cuota, "mercado": mercado,
             "p_modelo": "" if p is None else p, "edge": "" if edge is None else edge,
             "resultado": resultado, "seleccion_json": json.dumps(sel) if sel else ""}
@@ -29,6 +30,9 @@ def test_estadisticas():
         _f(200, "1er leg", "Rojo", 1.4, mercado=""),             # sin asignar: solo margen
         _f(200, "1er leg", "Verde", 2.55, mercado=""),
     ]
+    # Partido poco fiable (un jugador con 2 partidos previos): no cuenta
+    filas.append(dict(_f(300, "Ganador", "R. Smith", 3.0, 0.5, 0.5, "ganada", previos=(2, 5)),
+                      match_id="901"))
     e = estadisticas_winamax(filas)
     assert e["resumen"] == {"lecturas": 1, "cuotas": 6, "liquidadas": 4}
     margen = {m["mercado"]: m["margen"] for m in e["margen"]}

@@ -89,3 +89,43 @@ def partido_anterior(partidos, j1, j2, stats_hoy):
             r["texto"] = f"incluyen su último partido, contra {rival} ({marcador})"
         salida.append(r)
     return salida
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARTIDOS PREVIOS EN LA COMPETICION (¿es fiable el partido?)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def partidos_previos(semana, jugador, jornada=None, orden=None):
+    """Partidos terminados del jugador en la semana ANTES de este: los de
+    las jornadas anteriores y, de `jornada`, los que van antes de `orden`
+    en el cartel (sin jornada, todos los terminados).
+
+    semana: {jornada: partidos_de_jornada} de las jornadas de la semana
+    hasta hoy, en orden (las de dias posteriores aun son de la semana pasada).
+    """
+    n = 0
+    for j, partidos in semana.items():
+        for p in partidos:
+            if p["estado"] != "terminado" or not _juega(jugador, p):
+                continue
+            if j == jornada and orden is not None and p["orden"] >= orden:
+                continue
+            n += 1
+        if j == jornada:
+            break
+    return n
+
+
+def info_partido(semana, jornadas_hoy, j1, j2):
+    """Jornada, numero de partido y partidos previos de cada jugador en la
+    semana: {jornada, n_partido, previos_j1, previos_j2}. Si el partido no
+    esta en el cartel de hoy, jornada y n_partido van vacios y los previos
+    cuentan todos los terminados hasta ahora."""
+    for j in jornadas_hoy:
+        p = partido_en_cartel(semana.get(j, []), j1, j2)
+        if p:
+            return {"jornada": j, "n_partido": p["orden"] + 1,
+                    "previos_j1": partidos_previos(semana, j1, j, p["orden"]),
+                    "previos_j2": partidos_previos(semana, j2, j, p["orden"])}
+    return {"jornada": "", "n_partido": "",
+            "previos_j1": partidos_previos(semana, j1), "previos_j2": partidos_previos(semana, j2)}

@@ -26,7 +26,8 @@ from vigia import reglas
 from vigia.boton import (VERSION_BOTON, DatosNoValidos, casilla, decodificar, preparar,
                          seleccion_de_casilla)
 from vigia.cuotas import evaluar_cuotas
-from vigia.registro import estado_partido, gastado_del_dia, tope_del_dia
+from vigia.registro import (MIN_PREVIOS, estado_partido, fiable, gastado_del_dia,
+                            tope_del_dia)
 from vigia.mercados import texto_seleccion
 from vigia.nombres import emparejar
 
@@ -134,23 +135,25 @@ def comprobar_partido_anterior(j1_sel, j2_sel):
     return jornada, partido_anterior(partidos_de_jornada(lineas), j1_sel, j2_sel, stats_hoy)
 
 
-def numero_partido(j1_sel, j2_sel):
-    """(jornada, numero de partido 1..15) del partido en el cartel de hoy,
-    o ("", "") si no esta. Se guarda con la apuesta y con las cuotas de
-    Winamax para las estadisticas por numero de partido."""
+def datos_partido(j1_sel, j2_sel):
+    """{jornada, n_partido, previos_j1, previos_j2} del partido: su sitio en
+    el cartel de hoy y cuantos partidos llevaba cada jugador esta semana
+    antes de el. None si no se pueden leer las hojas de las jornadas."""
     try:
         from data_loading import _descargar_csv_jornada
-        from modelo.datos import jornadas_del_dia, partidos_de_jornada
-        from vigia.frescura import partido_en_cartel
+        from modelo.datos import jornadas_del_dia, jornadas_hasta, partidos_de_jornada
+        from vigia.frescura import info_partido
         from vigia.horario import dia_jornada
-        for jornada in jornadas_del_dia(dia_jornada(datetime.now(MADRID))):
-            lineas = _descargar_csv_jornada(jornada)
-            p = partido_en_cartel(partidos_de_jornada(lineas), j1_sel, j2_sel) if lineas else None
-            if p:
-                return jornada, p["orden"] + 1
+        dia = dia_jornada(datetime.now(MADRID))
+        semana = {}
+        for j in jornadas_hasta(dia):
+            lineas = _descargar_csv_jornada(j)
+            if not lineas:
+                return None
+            semana[j] = partidos_de_jornada(lineas)
+        return info_partido(semana, jornadas_del_dia(dia), j1_sel, j2_sel)
     except Exception:
-        pass
-    return "", ""
+        return None
 
 
 def _aviso_partido_anterior(j1_sel, j2_sel, completo):
@@ -450,8 +453,17 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
     de ese momento, para comparar y sacar estadisticas."""
     import json
     lectura = f"{datos['id'] or j1_sel}-{datos['h']}"
-    if not es_admin() or st.session_state.get("_wm_guardada") == lectura:
+    if not es_admin():
         return
+    hecho = st.session_state.get("_wm_guardada")
+    if hecho and hecho[0] == lectura:      # ya se guardo (o no) en esta lectura
+        st.caption(hecho[1])
+        return
+
+    def fin(msg):
+        st.session_state["_wm_guardada"] = (lectura, msg)
+        st.caption(msg)
+
     from alertas_ui import anadir_winamax
     ahora = datetime.now(MADRID)
     base = {
@@ -463,7 +475,18 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
         "vol_j1": _vol_num(j1.get("volatilidad")), "vol_j2": _vol_num(j2.get("volatilidad")),
         "fuente": datos.get("f", ""), "resultado": "",
     }
-    base["jornada"], base["n_partido"] = numero_partido(j1_sel, j2_sel)
+    info = datos_partido(j1_sel, j2_sel)
+    if info is None:   # sin marcarla: se reintenta en la siguiente recarga
+        st.caption("📊 No se guardan las cuotas para las estadísticas: no he podido "
+                   "leer las hojas de las jornadas para saber si el partido es fiable.")
+        return
+    base.update(info)
+    if not fiable(info):
+        poco = [f"{n} ({info[k]})" for n, k in ((j1_sel, "previos_j1"), (j2_sel, "previos_j2"))
+                if info[k] < MIN_PREVIOS]
+        return fin(f"📊 No se guardan las cuotas para las estadísticas: hacen falta "
+                   f"{MIN_PREVIOS} partidos previos esta semana y " + ", ".join(poco)
+                   + " no los tiene; con tan pocos datos el modelo no es fiable.")
     filas = []
     for s in w["selecciones"]:
         p = probabilidad(calc, s["sel"])
@@ -479,8 +502,8 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
         filas.append(dict(base, titulo=titulo, salida=salida, cuota=cuota))
     ok, error = anadir_winamax(filas)
     if ok:
-        st.session_state["_wm_guardada"] = lectura
-        st.caption(f"💾 {len(filas)} cuotas guardadas en la pestaña cuotas_winamax.")
+        fin(f"💾 {len(filas)} cuotas guardadas en la pestaña cuotas_winamax (partido "
+            f"fiable: {info['previos_j1']} y {info['previos_j2']} partidos previos).")
     else:
         st.caption(f"⚠️ No se pudieron guardar las cuotas: {error}")
 
@@ -509,7 +532,8 @@ def _guardar(f, estado, importe, importe_real, fecha, j1, j2, j1_sel, j2_sel):
         ok, error = marcar_estado(previa, estado, real)
     else:
         ahora = datetime.now(MADRID)
-        jornada, n_partido = numero_partido(j1_sel, j2_sel)
+        info = datos_partido(j1_sel, j2_sel) or {}
+        jornada, n_partido = info.get("jornada", ""), info.get("n_partido", "")
         gastado = gastado_del_dia(alertas or [], fecha)
         ok, error = anadir_alerta({
             "id": f"{fecha}-{j1_sel}-{j2_sel}-{f['texto']}", "fecha": fecha,

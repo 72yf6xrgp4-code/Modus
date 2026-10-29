@@ -218,11 +218,17 @@ las del estado de carga serían de la página anterior. Si la página lleva más
 de 10 minutos abierta y algún mercado no se veía, la app avisa de que esas
 cuotas pueden haber cambiado.
 
-**Por número de partido de la jornada** (🎟️ Apuestas): cada apuesta y cada
-cuota guardada con el botón llevan el número de partido de la jornada (1.º a
-15.º; columnas `jornada` y `n_partido`). La tabla «🔢 Por número de partido»
-compara, por tramos (1.º-3.º, 4.º-6.º…), lo que daba el modelo con el acierto
-real, y el beneficio; en «Winamax frente al modelo» → «Por nº de partido», el
-Brier del modelo y de Winamax. Sirve para ver si el modelo es más fiable
-cuando los jugadores llevan más partidos ese día. Las filas de esta semana que
-no lo tenían se rellenan solas al apuntar los resultados.
+**Solo partidos fiables en las estadísticas.** Un partido es fiable si los
+dos jugadores llevan al menos 3 partidos esa semana antes de él, de cualquier
+día (quien jugó el día anterior ya los tiene: son 5 por jornada). Las cuotas
+de Winamax de un partido no fiable **no se guardan** (la app lo dice al pulsar
+el botón), y las que ya estaban guardadas no cuentan en «Winamax frente al
+modelo». En `cuotas_winamax` van `jornada`, `n_partido`, `previos_j1` y
+`previos_j2`; en las filas de esta semana que no los tenían se rellenan solos
+al apuntar los resultados.
+
+**«Si las hubieras hecho todas»** (🎟️ Apuestas): de cada partido fiable que
+leíste con el botón, la mejor apuesta (la de más edge entre las que tu regla
+manda apostar) con el importe que indicaba el modelo; una por partido. «Las
+que apostaste» son tus apuestas de verdad, con lo que apostaste. El
+seguimiento por mercado compara las dos cosas.

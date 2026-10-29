@@ -29,7 +29,7 @@ from vigia.registro import (HOJA_ALERTAS, COLUMNAS_ALERTAS, HOJA_WINAMAX,
                             filas_a_dicts, gastado_del_dia, num,
                             resumen_apuestas, beneficio_fila, importe_apostado)
 from vigia.registro import (beneficio_real, por_mercado, por_mercado_y_volatilidad,
-                            por_numero_partido, tope_del_dia)
+                            mejores_por_partido, tope_del_dia, MIN_PREVIOS)
 from vigia.reglas import TOPE_DIARIO
 
 
@@ -417,7 +417,9 @@ def render_alertas():
 
     st.subheader("Histórico")
     anteriores = [f for f in filas if f.get("fecha") != hoy]
-    _bloque_resumen(filas)
+    wm, _ = cargar_winamax()
+    todas = mejores_por_partido(wm or [])
+    _bloque_resumen(filas, todas)
     pendientes = [f for f in anteriores if f.get("tipo_aviso") == AVISO_APUESTA
                   and f.get("estado") == ESTADO_PENDIENTE]
     if pendientes:
@@ -426,9 +428,8 @@ def render_alertas():
         for f in pendientes[-10:]:
             _tarjeta(f)
             _botones(f, f["_fila"])
-    _evolucion(filas)
-    _por_mercado(filas)
-    _por_numero_partido(filas)
+    _evolucion(filas, todas)
+    _por_mercado(filas, todas)
     if anteriores:
         with st.expander(f"📋 Todas las apuestas anteriores ({len(anteriores)})"):
             st.dataframe(_tabla(anteriores), use_container_width=True, hide_index=True)
@@ -452,11 +453,12 @@ def _tabla(filas):
     return df.iloc[::-1]
 
 
-def _bloque_resumen(filas):
+def _bloque_resumen(filas, mejores):
     """Dos columnas: lo que de verdad apostaste y 'si las hubieses hecho
-    todas' (todas las alertas de apuesta con su importe recomendado)."""
+    todas' (la mejor apuesta de cada partido fiable leido con el boton, con
+    el importe del modelo: registro.mejores_por_partido)."""
     real = resumen_apuestas(filas, solo_apostadas=True)
-    todas = resumen_apuestas(filas, solo_apostadas=False)
+    todas = resumen_apuestas(mejores, solo_apostadas=False)
     col_r, col_t = st.columns(2)
     for col, titulo, r in ((col_r, "💶 Las que apostaste", real),
                            (col_t, "🧪 Si las hubieras hecho todas", todas)):
@@ -469,23 +471,25 @@ def _bloque_resumen(filas):
                      help=f"{r['ganadas']} de {r['liquidadas']} liquidadas")
             b.metric("Apostado", _eur(r["invertido"]),
                      help=f"{r['pendientes']} sin resultado todavía")
+    st.caption(f"🧪 «Si las hubieras hecho todas»: de cada partido que leíste con el "
+               f"botón «Modus value» y en el que los dos jugadores llevaban {MIN_PREVIOS} "
+               f"partidos o más esa semana, la mejor apuesta (la de más edge entre las "
+               f"que tu regla manda apostar), con el importe que indicaba el modelo.")
 
 
-def _evolucion(filas):
-    """Beneficio acumulado y desglose por mercado de las apuestas liquidadas."""
-    apuestas = [f for f in filas if f.get("tipo_aviso") == AVISO_APUESTA]
-    liquidadas = [f for f in apuestas if f.get("resultado") in ("ganada", "perdida")]
-    if not liquidadas:
+def _evolucion(filas, mejores):
+    """Beneficio acumulado: lo que apostaste y 'si las hubieras hecho todas'."""
+    reales = [f for f in filas if f.get("tipo_aviso") == AVISO_APUESTA
+              and f.get("estado") == ESTADO_APOSTADA
+              and f.get("resultado") in ("ganada", "perdida")]
+    todas = [f for f in mejores if f.get("resultado") in ("ganada", "perdida")]
+    if not reales and not todas:
         return
-    df = pd.DataFrame([{
-        "fecha": f.get("fecha"), "hora": f.get("hora", ""),
-        "mercado": f.get("mercado", ""),
-        "todas": beneficio_fila(f),
-        "real": beneficio_fila(f, real=True) if f.get("estado") == ESTADO_APOSTADA else 0.0,
-        "importe": num(f.get("importe")),
-        "ganada": f.get("resultado") == "ganada",
-    } for f in liquidadas]).sort_values(["fecha", "hora"])
-    evol = df.groupby("fecha")[["todas", "real"]].sum().cumsum()
+    df = pd.DataFrame(
+        [{"fecha": f.get("fecha"), "real": beneficio_fila(f, real=True), "todas": 0.0}
+         for f in reales]
+        + [{"fecha": f.get("fecha"), "real": 0.0, "todas": beneficio_fila(f)} for f in todas])
+    evol = df.groupby("fecha")[["todas", "real"]].sum().sort_index().cumsum()
     evol.columns = ["Si las hubieras hecho todas", "Las que apostaste"]
     st.markdown("**Beneficio acumulado (€)**")
     st.line_chart(evol, height=240)
@@ -509,32 +513,32 @@ def _tabla_mercados(grupos):
     return pd.DataFrame(filas)
 
 
-def _por_mercado(filas):
+def _por_mercado(filas, mejores):
     """Seguimiento de cada mercado por separado, sin y con volatilidad."""
-    if not any(f.get("tipo_aviso") == AVISO_APUESTA for f in filas):
+    if not mejores and not any(f.get("tipo_aviso") == AVISO_APUESTA for f in filas):
         return
     st.markdown("#### 📊 Seguimiento por mercado")
     sin_vol, con_vol = st.tabs(["Sin volatilidad", "Con volatilidad"])
     with sin_vol:
         st.caption("Cada mercado por separado, sin tener en cuenta la volatilidad. "
-                   "«Apuestas» son todas las que tuvieron value (las hicieras o no), con "
-                   "su importe recomendado; «real» solo las que marcaste como apostadas, "
-                   "con lo que de verdad apostaste.")
-        grupos, _ = por_mercado(filas)
+                   "«Apuestas»: si las hubieras hecho todas (la mejor de cada partido "
+                   "fiable leído con el botón, con el importe del modelo); «real»: las que "
+                   "marcaste como apostadas, con lo que de verdad apostaste.")
+        grupos, _ = por_mercado(filas, todas=mejores)
         st.dataframe(_tabla_mercados(grupos), use_container_width=True, hide_index=True)
     with con_vol:
         st.caption("Lo mismo aplicando la regla de volatilidad del vigía: con volatilidad "
                    "alta se exige más edge (+2 puntos por punto por encima de 12) y el "
                    "importe baja un escalón; con más de 18 o sin dato, la apuesta no "
                    "cuenta. Compáralo con la otra pestaña para ver si la regla compensa.")
-        grupos, excluidas = por_mercado(filas, con_volatilidad=True)
+        grupos, excluidas = por_mercado(filas, con_volatilidad=True, todas=mejores)
         if grupos:
             st.dataframe(_tabla_mercados(grupos), use_container_width=True, hide_index=True)
         if excluidas:
             st.caption(f"Apuestas que la regla habría descartado (o sin dato de "
                        f"volatilidad): {excluidas}.")
-        st.markdown("**Por nivel de volatilidad del partido** (todas las apuestas con value)")
-        niveles = por_mercado_y_volatilidad(filas)
+        st.markdown("**Por nivel de volatilidad del partido** (si las hubieras hecho todas)")
+        niveles = por_mercado_y_volatilidad(mejores)
         orden = ["baja/media", "alta", "sin dato"]
         tabla = []
         for mercado in sorted({m for m, _ in niveles}):
@@ -550,34 +554,6 @@ def _por_mercado(filas):
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
         st.caption("Cada casilla: ganadas / liquidadas · ROI. El nivel es el del jugador "
                    "más irregular del partido.")
-
-
-def _por_numero_partido(filas):
-    """¿Acierta mas el modelo cuanto mas avanzada va la jornada?"""
-    grupos = por_numero_partido(filas)
-    if not grupos:
-        return
-    st.markdown("#### 🔢 Por número de partido de la jornada")
-    st.caption("Las apuestas con value según el número de partido de la jornada "
-               "(1.º a 15.º). En los primeros, los jugadores aún no han jugado ese "
-               "día; en los últimos llevan 3-4 partidos y la forma de hoy pesa más. "
-               "**Fiable** = el acierto real se parece a lo que decía el modelo.")
-    tabla = []
-    for g in grupos:
-        t, r = g["todas"], g["reales"]
-        dif = (t["acierto"] - g["p_media"]) if t["acierto"] is not None and g["p_media"] else None
-        tabla.append({
-            "Partido": g["tramo"], "Apuestas": t["n"], "Liquidadas": t["liq"],
-            "El modelo daba": _pct(g["p_media"]), "Acierto real": _pct(t["acierto"]),
-            "Diferencia": "—" if dif is None else f"{dif*100:+.1f} pts".replace(".", ","),
-            "Beneficio": _eur(t["beneficio"]), "ROI": _pct(t["roi"]),
-            "Beneficio real": _eur(r["beneficio"]), "ROI real": _pct(r["roi"]),
-        })
-    st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
-    if any(g["tramo"] == "sin dato" for g in grupos):
-        st.caption("«sin dato»: apuestas de antes de guardar el número de partido (o de "
-                   "partidos que no estaban en la hoja). Las de esta semana se rellenan "
-                   "solas al apuntar los resultados.")
 
 
 def _estadisticas_winamax():
@@ -604,8 +580,7 @@ def _estadisticas_winamax():
             return "—"
         return (f"{v*100:+.1f} %" if signo else f"{v*100:.1f} %").replace(".", ",")
 
-    t1, t2, t4, t3 = st.tabs(["Por edge", "Modelo vs Winamax", "Por nº de partido",
-                              "Margen de Winamax"])
+    t1, t2, t3 = st.tabs(["Por edge", "Modelo vs Winamax", "Margen de Winamax"])
     with t1:
         st.caption("Si hubieras apostado 1 € a TODAS las cuotas leídas, según el edge "
                    "que daba el modelo. Sirve para ver a partir de qué edge gana.")
@@ -630,22 +605,6 @@ def _estadisticas_winamax():
                 "Brier Winamax": f"{p['brier_winamax']:.3f}".replace(".", ","),
                 "Mejor": p["mejor"]} for p in e["precision"]]),
                 use_container_width=True, hide_index=True)
-        else:
-            st.info("Aún no hay selecciones con resultado.")
-    with t4:
-        st.caption("Todas las cuotas leídas con resultado, según el número de partido de "
-                   "la jornada: ¿estima mejor el modelo cuando los jugadores llevan más "
-                   "partidos ese día? Brier: más bajo, mejor. «1 € a edge ≥ 20 %»: lo "
-                   "que habría dado tu regla.")
-        if e["partidos"]:
-            st.dataframe(pd.DataFrame([{
-                "Partido": p["tramo"], "Selecciones": p["n"],
-                "Brier modelo": f"{p['brier_modelo']:.3f}".replace(".", ","),
-                "Brier Winamax": f"{p['brier_winamax']:.3f}".replace(".", ","),
-                "El modelo daba": pct(p["p_media"]), "Acierto real": pct(p["acierto"]),
-                "Apuestas (edge ≥ 20 %)": p["apuestas"],
-                "Beneficio": _eur(p["ap_beneficio"]), "ROI": pct(p["ap_roi"], True)}
-                for p in e["partidos"]]), use_container_width=True, hide_index=True)
         else:
             st.info("Aún no hay selecciones con resultado.")
     with t3:

@@ -471,6 +471,13 @@ def jornadas_del_dia(ahora):
     return [n for (wd, _h, _m, n) in INICIOS_JORNADAS if wd == ahora.weekday()]
 
 
+def jornadas_hasta(ahora):
+    """Jornadas de la semana desde el lunes hasta la fecha de `ahora`
+    (incluida), en orden. Las de dias posteriores aun son de la semana
+    pasada."""
+    return [n for (wd, _h, _m, n) in INICIOS_JORNADAS if wd <= ahora.weekday()]
+
+
 def combinar_forma_reciente(resumen, datos_hoy):
     """Combina, jugador a jugador, el Resumen Semanal con la jornada de hoy
     (fuente 'Forma reciente'). Ver data_loading.cargar_forma_reciente."""

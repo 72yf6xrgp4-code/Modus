@@ -274,13 +274,27 @@ class Vigia:
             return (cp["legs2"], cp["legs1"], cp["t180_2"], cp["t180_1"])
         return (cp["legs1"], cp["legs2"], cp["t180_1"], cp["t180_2"])
 
-    def _pendientes(self, filas, hoy):
-        """Filas sin resultado, o sin numero de partido y de esta semana (la
-        hoja de cada jornada se reescribe la semana siguiente)."""
+    def _pendientes(self, filas, hoy, campos=("n_partido",)):
+        """Filas sin resultado, o a las que les falta alguno de `campos` y son
+        de esta semana (la hoja de cada jornada se reescribe la siguiente)."""
         hace_6 = (hoy - timedelta(days=6)).isoformat()
         return [f for f in filas
                 if f.get("resultado") not in ("ganada", "perdida")
-                or (not f.get("n_partido") and str(f.get("fecha", "")) >= hace_6)]
+                or (any(str(f.get(c, "")).strip() == "" for c in campos)
+                    and str(f.get("fecha", "")) >= hace_6)]
+
+    def _previos(self, f, jornada, orden, cache):
+        """Partidos de cada jugador en la semana antes de este (para saber si
+        el partido es fiable): {previos_j1, previos_j2}."""
+        from vigia.frescura import partidos_previos
+        dia = datetime.fromisoformat(f["fecha"])
+        semana = {}
+        for j in md.jornadas_hasta(dia):
+            if j not in cache:
+                cache[j] = md.partidos_de_jornada(self.datos.lineas(j))
+            semana[j] = cache[j]
+        return {"previos_j1": partidos_previos(semana, f["j1"], jornada, orden),
+                "previos_j2": partidos_previos(semana, f["j2"], jornada, orden)}
 
     def liquidar(self):
         """Apunta el resultado de las apuestas (pestana alertas: resultado y
@@ -318,13 +332,16 @@ class Vigia:
 
         # Cuotas de Winamax guardadas con el boton: todas en una peticion
         cambios, n_wm = [], 0
-        for f in self._pendientes(self.hoja.filas_winamax(), hoy):
+        for f in self._pendientes(self.hoja.filas_winamax(), hoy,
+                                  ("n_partido", "previos_j1", "previos_j2")):
             r = self._partido_real(f, cache)
             if not r:
                 continue
             cp, jornada, _ = r
             campos = {} if f.get("n_partido") else {"jornada": f.get("jornada") or jornada,
                                                      "n_partido": cp["orden"] + 1}
+            if str(f.get("previos_j1", "")).strip() == "":
+                campos.update(self._previos(f, f.get("jornada") or jornada, cp["orden"], cache))
             if f.get("resultado") not in ("ganada", "perdida") and f.get("seleccion_json"):
                 ok = reglas.acierta(registro.seleccion(f), *self._resultado_real(f, cache))
                 if ok is not None:

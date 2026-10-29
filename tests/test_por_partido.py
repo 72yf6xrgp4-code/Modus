@@ -3,72 +3,95 @@ from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+from vigia.frescura import info_partido, partidos_previos
 from vigia.hoja import HojaMemoria
 from vigia.nucleo import Vigia
-from vigia.registro import estadisticas_winamax, por_numero_partido, tramo_partido
+from vigia.registro import fiable, mejores_por_partido, por_mercado, resumen_apuestas
 
 GANA_1 = json.dumps({"tipo": "ganador", "jugador": 1})
 
 
-def _ap(n, resultado, estado="apostada", p=0.6, importe=5, cuota=2.0, **extra):
-    return dict({"tipo_aviso": "apuesta", "n_partido": n, "resultado": resultado,
-                 "estado": estado, "p_modelo": p, "importe": importe, "cuota": cuota}, **extra)
+def _p(orden, j1, j2, estado="terminado"):
+    return {"orden": orden, "j1": j1, "j2": j2, "legs1": 4, "legs2": 1,
+            "t180_1": 1, "t180_2": 0, "estado": estado}
 
 
-def test_tramos():
-    assert [tramo_partido({"n_partido": n}) for n in (1, 3, 4, 9, 12, 13, 15, "", None)] == [
-        "1.º-3.º", "1.º-3.º", "4.º-6.º", "7.º-9.º", "10.º-12.º", "13.º o más", "13.º o más",
-        "sin dato", "sin dato"]
+# Grupo A: martes con 2 partidos de Baetens el lunes; Self solo juega el martes
+SEMANA = {
+    "Grupo A Lunes": [_p(0, "Andy Baetens", "X"), _p(1, "Y", "Andy Baetens"), _p(2, "X", "Y")],
+    "Grupo A Martes": [_p(0, "Self", "X"), _p(1, "Andy Baetens", "Y"), _p(2, "Self", "Y"),
+                       _p(3, "Self", "Z"),
+                       _p(4, "Andy Baetens", "Self", "pendiente"),
+                       _p(5, "Self", "X", "pendiente")],
+}
 
 
-def test_por_numero_de_partido():
-    filas = [_ap(1, "perdida"), _ap(2, "ganada"), _ap(14, "ganada", p=0.7),
-             _ap(15, "ganada", estado="no apostada", importe=10),
-             _ap("", "ganada"), dict(_ap(5, ""), tipo_aviso="otra cosa")]
-    res = {g["tramo"]: g for g in por_numero_partido(filas)}
-    assert list(res) == ["1.º-3.º", "13.º o más", "sin dato"]          # en orden
-    assert res["1.º-3.º"]["todas"]["acierto"] == 0.5 and res["1.º-3.º"]["p_media"] == 0.6
-    ult = res["13.º o más"]
-    assert ult["todas"]["beneficio"] == 5 + 10 and ult["reales"]["beneficio"] == 5
-    assert abs(ult["p_media"] - 0.65) < 1e-9 and ult["todas"]["acierto"] == 1.0
+def test_partidos_previos_cuentan_toda_la_semana_hasta_este_partido():
+    assert partidos_previos(SEMANA, "Andy Baetens", "Grupo A Martes", 4) == 3   # 2 lunes + 1
+    assert partidos_previos(SEMANA, "Self", "Grupo A Martes", 4) == 3
+    assert partidos_previos(SEMANA, "Self", "Grupo A Martes", 2) == 1           # antes del 3.º
+    info = info_partido(SEMANA, ["Grupo A Martes"], "Self", "Andy Baetens")
+    assert info == {"jornada": "Grupo A Martes", "n_partido": 5, "previos_j1": 3, "previos_j2": 3}
+    # fuera del cartel: todos los terminados hasta ahora
+    assert info_partido(SEMANA, ["Grupo A Martes"], "Self", "Q")["previos_j1"] == 3
 
 
-def test_winamax_por_numero_de_partido():
-    base = {"titulo": "Ganador", "mercado": "Ganador", "fecha": "2026-11-05", "j1": "A", "j2": "B"}
-    filas = [dict(base, lectura="1", salida="A", cuota=2.5, p_modelo=0.5, edge=0.25,
-                  resultado="ganada", n_partido=2),
-             dict(base, lectura="1", salida="B", cuota=1.6, p_modelo=0.5, edge=-0.2,
-                  resultado="perdida", n_partido=2),
-             dict(base, lectura="2", j1="C", salida="A", cuota=2.0, p_modelo=0.6, edge=0.2,
-                  resultado="perdida", n_partido=11),
-             dict(base, lectura="2", j1="C", salida="B", cuota=2.0, p_modelo=0.4, edge=-0.2,
-                  resultado="ganada", n_partido=11)]
-    p = {g["tramo"]: g for g in estadisticas_winamax(filas)["partidos"]}
-    assert p["1.º-3.º"]["n"] == 2 and p["1.º-3.º"]["apuestas"] == 1
-    assert p["1.º-3.º"]["ap_roi"] == 1.5                                # 2,5 - 1
-    assert p["10.º-12.º"]["ap_roi"] == -1.0 and p["10.º-12.º"]["acierto"] == 0.5
+def test_fiable():
+    assert fiable({"previos_j1": 3, "previos_j2": 7})
+    assert not fiable({"previos_j1": 2, "previos_j2": 7})
+    assert not fiable({"previos_j1": "", "previos_j2": 7})      # sin dato: no cuenta
+    assert not fiable({})
 
 
-def test_el_vigia_rellena_el_numero_de_partido_de_filas_ya_liquidadas():
-    """Filas de antes de esta version: ya tienen resultado pero no numero
-    de partido. Si son de esta semana se rellena; las viejas, no."""
-    jornada = [{"orden": i, "j1": a, "j2": b, "legs1": 4, "legs2": 1, "t180_1": 1, "t180_2": 0,
-                "estado": "terminado"}
-               for i, (a, b) in enumerate([("X", "Y"), ("Andy Baetens", "Self")])]
-    datos = SimpleNamespace(lineas=lambda j: j)
+def _wm(match, lectura, salida, edge, importe, resultado, cuota=2.0, previos=(3, 3), **extra):
+    return dict({"fecha": "2026-11-03", "hora": "11:00", "match_id": match, "lectura": lectura,
+                 "j1": "A", "j2": "B", "salida": salida, "mercado": "Ganador", "edge": edge,
+                 "importe": importe, "cuota": cuota, "resultado": resultado,
+                 "seleccion_json": GANA_1, "previos_j1": previos[0], "previos_j2": previos[1]},
+                **extra)
+
+
+def test_si_las_hubieras_hecho_todas_la_mejor_de_cada_partido_fiable():
+    filas = [
+        # Partido 1: lectura vieja (no cuenta) y la ultima con dos con value
+        _wm("1", 100, "vieja", 0.9, 15, "ganada"),
+        _wm("1", 200, "A", 0.25, 5, "perdida"),
+        _wm("1", 200, "B", 0.40, 10, "ganada", cuota=3.0),
+        _wm("1", 200, "C", 0.60, 0, "perdida"),          # mas edge pero tu regla: 0 EUR
+        # Partido 2: poco fiable (un jugador con 2 previos) -> fuera
+        _wm("2", 300, "A", 0.8, 15, "ganada", previos=(2, 5)),
+        # Partido 3: ninguna con importe -> sin apuesta
+        _wm("3", 400, "A", 0.1, 0, "ganada"),
+    ]
+    mejores = mejores_por_partido(filas)
+    assert [(m["match_id"], m["salida"]) for m in mejores] == [("1", "B")]
+    r = resumen_apuestas(mejores, solo_apostadas=False)
+    assert (r["n"], r["invertido"], r["beneficio"]) == (1, 10, 20)   # 10 EUR a 3,0
+    # en el seguimiento por mercado: 'todas' de la simulacion, 'reales' tus apuestas
+    mia = {"tipo_aviso": "apuesta", "estado": "apostada", "mercado": "Ganador", "importe": 5,
+           "importe_real": 7, "cuota": 2.0, "resultado": "perdida"}
+    total = por_mercado([mia], todas=mejores)[0][-1]
+    assert total["todas"]["beneficio"] == 20 and total["reales"]["beneficio"] == -7
+
+
+def test_el_vigia_rellena_jornada_numero_y_previos_de_filas_ya_guardadas():
+    """Filas de antes de esta version: sin numero de partido ni previos. Si
+    son de esta semana se rellenan; las viejas, no."""
     import modelo.datos as md
     original = md.partidos_de_jornada
-    md.partidos_de_jornada = lambda lineas: jornada
+    md.partidos_de_jornada = lambda lineas: SEMANA.get(lineas, [])
     try:
-        hoja = HojaMemoria(alertas=[
-            {"fecha": "2026-11-05", "j1": "Self", "j2": "Andy Baetens", "tipo_aviso": "apuesta",
-             "resultado": "perdida", "seleccion_json": GANA_1},
-            {"fecha": "2026-10-20", "j1": "Self", "j2": "Andy Baetens", "tipo_aviso": "apuesta",
-             "resultado": "perdida", "seleccion_json": GANA_1}])
-        reloj = lambda: datetime(2026, 11, 7, 12, tzinfo=ZoneInfo("Europe/Madrid"))  # noqa: E731
+        datos = SimpleNamespace(lineas=lambda j: j)
+        sel_baetens = {"fecha": "2026-11-03", "j1": "Andy Baetens", "j2": "Y",
+                       "resultado": "ganada", "seleccion_json": GANA_1}
+        hoja = HojaMemoria(alertas=[dict(sel_baetens, tipo_aviso="apuesta")],
+                           winamax=[sel_baetens, dict(sel_baetens, fecha="2026-10-20")])
+        reloj = lambda: datetime(2026, 11, 4, 12, tzinfo=ZoneInfo("Europe/Madrid"))  # noqa: E731
         assert Vigia(hoja, None, datos, None, reloj=reloj).liquidar() == 0   # nada nuevo
     finally:
         md.partidos_de_jornada = original
-    nueva, vieja = hoja.alertas()
-    assert (nueva["n_partido"], nueva["jornada"], nueva["resultado"]) == (2, "Grupo C Jueves", "perdida")
-    assert "n_partido" not in vieja
+    alerta = hoja.alertas()[0]
+    assert (alerta["jornada"], alerta["n_partido"]) == ("Grupo A Martes", 2)
+    nueva, vieja = hoja.filas_winamax()
+    assert (nueva["n_partido"], nueva["previos_j1"], nueva["previos_j2"]) == (2, 2, 2)
+    assert "previos_j1" not in vieja
