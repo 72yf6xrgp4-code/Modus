@@ -196,10 +196,11 @@ de hoy:
 1. **Espera a sus datos:** los partidos anteriores de los **dos jugadores**
    tienen que estar terminados en la hoja de la jornada **y** contados en sus
    estadísticas de hoy. Se leen por la API de Google, al momento.
-2. **Desde entonces y hasta que empieza**, cada minuto pide sus cuotas de
-   Winamax a OddsPapi (solo si Winamax ya las tiene) y las evalúa con tus
+2. **Cuando es de los dos siguientes del cartel** (Winamax publica sus
+   cuotas unos dos partidos antes) y hasta que empieza, pide sus cuotas a
+   OddsPapi **cada 3 minutos, como mucho 6 veces**, y las evalúa con tus
    reglas. Usa el edge exigido por volatilidad, el ¼ de Kelly y el tope del
-   día.
+   día. La hoja la sigue mirando cada minuto: eso no gasta peticiones.
 3. **Guarda la primera lectura** en `cuotas_winamax` (fuente `vigia`; solo
    partidos fiables, como la app) para las estadísticas. Así se recogen las
    cuotas de todos los partidos aunque no los mires.
@@ -222,9 +223,11 @@ Si un partido empieza sin llegar a avisar, `vigia_log` dice por qué estaba
 esperando (tipo `sin aviso`): sirve para ver si la hoja va con retraso. Al
 final de cada tanda, el log apunta cuántas peticiones a OddsPapi ha hecho.
 
-**Peticiones:** la lista de partidos, 1 por minuto cuando hay algún partido
-listo, más las cuotas de cada partido listo cada minuto hasta que empieza o
-se avisa. Son unas 15.000-25.000 al mes, y nada fuera de las ventanas.
+**Peticiones (plan de 5.000 al mes):** como mucho 6 por partido (unos 115
+partidos por semana, unos 490 al mes: ≈ 2.950), más la lista de partidos cada
+3 horas (≈ 100 al mes). Total, como mucho ≈ 3.100 al mes; el resto queda
+para el botón «Traer cuotas (API)» de la app. Se ajusta en `vigia/nucleo.py`
+(`API_CADA_MIN`, `API_MAX_POR_PARTIDO`).
 
 Si también tienes el vigía del portátil, ponle `ODDSPAPI_KEY` en su `.env`,
 o quita su tarea programada. Si no, el que llegue antes avisará con cuotas

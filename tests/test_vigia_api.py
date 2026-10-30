@@ -4,7 +4,7 @@ guarda la lectura y avisa una vez, con un aviso claro."""
 
 import copy
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -86,9 +86,22 @@ def _montar(odds=ODDS):
         p["estado"] = "terminado"
     cal[3]["estado"] = "en_juego"            # Davies aun jugando su anterior
     hoja, notif, api = HojaMemoria(), Notif(), Api(odds)
-    v = Vigia(hoja, notif, datos, AJ, reloj=lambda: datetime(2026, 10, 30, 17, 20, tzinfo=M),
-              api=api)
+    v = Vigia(hoja, notif, datos, AJ, reloj=RELOJ, api=api)
+    RELOJ.t = datetime(2026, 10, 30, 17, 10, tzinfo=M)
     return v, datos, hoja, notif, api
+
+
+class Reloj:
+    t = None
+
+    def __call__(self):
+        return self.t
+
+    def mas(self, minutos):
+        self.t += timedelta(minutes=minutos)
+
+
+RELOJ = Reloj()
 
 
 def test_espera_al_ultimo_partido_y_a_sus_estadisticas_y_avisa_una_vez():
@@ -131,16 +144,46 @@ def test_sin_value_guarda_la_lectura_una_vez_y_sigue_mirando_hasta_que_empiece()
     datos.calendario[J][3]["estado"] = "terminado"
     datos.contados["David Davies"] = 2
     v.ciclo()
+    RELOJ.mas(1)
+    v.ciclo()                                   # cada 3 minutos, no cada vuelta
+    assert notif.enviados == [] and api.pedidas.count("id1903399476162502") == 1
+    RELOJ.mas(2)
     v.ciclo()
-    assert notif.enviados == [] and api.pedidas.count("id1903399476162502") == 2
+    assert api.pedidas.count("id1903399476162502") == 2
     n_filas = len(hoja.filas_winamax())
     assert n_filas > 0
     # Empieza: OddsPapi lo marca en juego y ya no se pide
     caras["statusId"] = 1
-    v.ciclo()
-    v.ciclo()
+    for _ in range(3):
+        RELOJ.mas(3)
+        v.ciclo()
     assert api.pedidas.count("id1903399476162502") == 3
     assert len(hoja.filas_winamax()) == n_filas
+    assert api.pedidas.count("partidos") == 1   # la lista, una vez
+
+
+def test_como_mucho_seis_lecturas_por_partido_y_solo_de_los_dos_siguientes():
+    caras = copy.deepcopy(ODDS)
+    for m in caras["bookmakerOdds"]["winamax.es"]["markets"].values():
+        for s in m["outcomes"].values():
+            s["players"]["0"]["price"] = 1.05
+    v, datos, hoja, notif, api = _montar(caras)
+    cal = datos.calendario[J]
+    # Tres partidos sin empezar antes del suyo: aun no se piden sus cuotas
+    for p in cal[:4]:
+        p["estado"] = "pendiente"
+    datos.contados = {"David Davies": 0, "Benito van de Pas": 0}
+    cal[4].update(j1="David Davies", j2="Benito van de Pas")
+    cal[:4] = [dict(p, j1="A" + str(i), j2="B" + str(i)) for i, p in enumerate(cal[:4])]
+    v.ciclo()
+    assert "id1903399476162502" not in api.pedidas
+    assert "más de dos partidos" in v._esperas["David Davies vs Benito van de Pas (Grupo C Viernes, 5)"]
+    for p in cal[:3]:
+        p["estado"] = "terminado"
+    for _ in range(10):
+        v.ciclo()
+        RELOJ.mas(3)
+    assert api.pedidas.count("id1903399476162502") == 6
 
 
 def test_empieza_sin_llegar_a_avisar_queda_en_el_log():

@@ -9,9 +9,12 @@ probarlo sin red.
 Con OddsPapi (ODDSPAPI_KEY) el vigia trabaja con las cuotas reales de
 Winamax: un partido esta listo cuando los partidos anteriores de sus dos
 jugadores estan terminados en la hoja Y sus estadisticas ya los cuentan
-(vigia/frescura.py). Desde ese momento y hasta que empieza, cada vuelta
-pide sus cuotas; guarda la primera lectura (cuotas_winamax, para las
-estadisticas) y avisa en cuanto alguna llega a tu edge.
+(vigia/frescura.py), y es de los dos siguientes del cartel (Winamax publica
+sus cuotas unos dos partidos antes). Desde ese momento y hasta que empieza
+pide sus cuotas cada API_CADA_MIN minutos, como mucho API_MAX_POR_PARTIDO
+veces; guarda la primera lectura (cuotas_winamax, para las estadisticas) y
+avisa en cuanto alguna llega a tu edge. Asi cabe en el plan de 5.000
+peticiones al mes (~115 partidos por semana: unas 3.000).
 """
 
 import logging
@@ -29,6 +32,12 @@ from vigia.nombres import emparejar, mismo_jugador
 
 log = logging.getLogger(__name__)
 MADRID = ZoneInfo("Europe/Madrid")
+
+# Peticiones a OddsPapi (plan de 5.000 al mes)
+API_CADA_MIN = 3             # minutos entre lecturas del mismo partido
+API_MAX_POR_PARTIDO = 6      # lecturas como mucho de cada partido
+API_PARTIDOS_CADA_MIN = 180  # la lista de partidos (sus id) no cambia: cada 3 h
+API_PARTIDOS_REINTENTO_MIN = 15   # si falta un partido en la lista, otra como mucho cada 15 min
 
 
 def ahora_madrid():
@@ -163,6 +172,8 @@ class Vigia:
         self._esperas = {}          # partido -> por que aun no esta listo
         self._cerrados = set()      # partidos que ya empezaron (OddsPapi)
         self._semana = {}           # jornadas de dias anteriores (no cambian)
+        self._lecturas = {}         # partido -> (lecturas pedidas, hora de la ultima)
+        self._lista, self._lista_t = None, None   # partidos de OddsPapi y cuando
         self.notif = notificador
         self.datos = datos
         self.aj = ajustes
@@ -315,6 +326,7 @@ class Vigia:
         from vigia.frescura import partido_anterior
         listos, pendientes = [], set()
         for jornada, lista in self.datos.calendario.items():
+            sin_empezar = [p["orden"] for p in lista if p["estado"] == "pendiente"]
             for p in lista:
                 if p["estado"] != "pendiente":
                     continue
@@ -327,7 +339,9 @@ class Vigia:
                 faltan = [f"{r['jugador']}: {r['texto']}" for r in fr if not r["ok"]]
                 if faltan:
                     self._espera(clave, "; ".join(faltan))
-                else:
+                elif sin_empezar.index(p["orden"]) > 1:
+                    self._espera(clave, "faltan más de dos partidos para el suyo")
+                elif self._toca_leer(clave, ahora):
                     listos.append((jornada, p, clave))
         # Los que empezaron sin llegar a avisar: por que (para ver retrasos)
         for clave in [c for c in self._esperas if c not in pendientes]:
@@ -339,9 +353,17 @@ class Vigia:
         # El modelo, con las estadisticas recien leidas (incluyen sus ultimos partidos)
         if self.datos.edad() > 50:
             self.datos.refrescar(ahora, forzar=True)
-        from vigia.oddspapi import ErrorOddsPapi
+        from vigia.oddspapi import ErrorOddsPapi, buscar_partido
         try:
-            partidos = self.api.partidos(ahora)
+            # La lista de partidos (sus id) se pide poco: cada 3 h, o antes si
+            # falta alguno de los listos (como mucho cada 15 min)
+            edad = (ahora - self._lista_t).total_seconds() / 60 if self._lista_t else None
+            falta = self._lista is not None and any(
+                not buscar_partido(self._lista, p["j1"], p["j2"]) for _, p, _ in listos)
+            if (edad is None or edad >= API_PARTIDOS_CADA_MIN
+                    or (falta and edad >= API_PARTIDOS_REINTENTO_MIN)):
+                self._lista, self._lista_t = self.api.partidos(ahora), ahora
+            partidos = self._lista
         except ErrorOddsPapi as e:
             log.warning("OddsPapi: %s", e)
             self._descartar("oddspapi", "", f"OddsPapi: {e}")
@@ -356,6 +378,15 @@ class Vigia:
                 log.exception("Error con %s", clave)
                 self._log("error", clave, repr(e)[:300])
         return len(pendientes)
+
+    def _toca_leer(self, clave, ahora):
+        """Si toca pedir otra vez las cuotas de este partido (cada
+        API_CADA_MIN minutos, como mucho API_MAX_POR_PARTIDO veces)."""
+        n, t = self._lecturas.get(clave, (0, None))
+        if n >= API_MAX_POR_PARTIDO:
+            self._espera(clave, f"ya se han pedido sus cuotas {n} veces")
+            return False
+        return t is None or (ahora - t).total_seconds() >= API_CADA_MIN * 60 - 5
 
     def _info_partido(self, j1, j2, d1, d2):
         """{jornada, n_partido, previos_j1, previos_j2, semanas_j1, semanas_j2}."""
@@ -394,11 +425,8 @@ class Vigia:
         f = oddspapi.buscar_partido(partidos, n1, n2)
         if f is None:
             return self._espera(clave, "OddsPapi no tiene el partido")
-        if f.get("statusId") != 0:
-            self._cerrados.add(clave)
-            return
-        if not f.get("hasOdds"):
-            return self._espera(clave, "Winamax aún no tiene cuotas")
+        n, _ = self._lecturas.get(clave, (0, None))
+        self._lecturas[clave] = (n + 1, self.reloj())
         odds = self.api.cuotas(f["fixtureId"])
         if odds.get("statusId", 0) != 0:
             self._cerrados.add(clave)
