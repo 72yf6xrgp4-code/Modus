@@ -1,0 +1,986 @@
+[
+ {
+  "marketId": 191,
+  "marketLength": 2,
+  "marketName": "Winner",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 0.0,
+  "period": "result",
+  "marketType": "moneyline",
+  "outcomes": [
+   {
+    "outcomeId": 192,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 191,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 193,
+  "marketLength": 3,
+  "marketName": "Most 180s",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 0.0,
+  "period": "result",
+  "marketType": "moneyline-180s",
+  "outcomes": [
+   {
+    "outcomeId": 193,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 194,
+    "outcomeName": "X"
+   },
+   {
+    "outcomeId": 195,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 196,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 3.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 197,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 196,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 198,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 4.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 199,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 198,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1910,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 4.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1910,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1911,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1912,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 5.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1913,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1912,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1914,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 5.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1914,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1915,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1916,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 6.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1917,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1916,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1918,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 6.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1919,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1918,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1920,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 7.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1921,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1920,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1922,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 7.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1922,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1923,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1924,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 8.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1925,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1924,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1926,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 8.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1927,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1926,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1928,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 9.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1928,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1929,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1930,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 9.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1930,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1931,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1932,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 10.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1933,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1932,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1934,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 10.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1934,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1935,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1936,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 11.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1937,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1936,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1938,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 11.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1938,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1939,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1940,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 12.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1940,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1941,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1942,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 12.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1942,
+    "outcomeName": "Over"
+   },
+   {
+    "outcomeId": 1943,
+    "outcomeName": "Under"
+   }
+  ]
+ },
+ {
+  "marketId": 1944,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 13.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1945,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1944,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1946,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 13.5,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1947,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1946,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1948,
+  "marketLength": 2,
+  "marketName": "Total Legs",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 14.0,
+  "period": "result",
+  "marketType": "totals",
+  "outcomes": [
+   {
+    "outcomeId": 1949,
+    "outcomeName": "Under"
+   },
+   {
+    "outcomeId": 1948,
+    "outcomeName": "Over"
+   }
+  ]
+ },
+ {
+  "marketId": 1950,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -6.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1951,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1950,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1952,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -5.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1953,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1952,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1954,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -5.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1955,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1954,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1956,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -4.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1957,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1956,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1958,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -4.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1959,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1958,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1960,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -3.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1960,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1961,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1962,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -3.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1962,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1963,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1964,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -2.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1964,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1965,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1966,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -2.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1966,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1967,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1968,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -1.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1969,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1968,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1970,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -1.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1970,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1971,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1972,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": -0.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1973,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1972,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1974,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 0.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1975,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1974,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1976,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 0.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1977,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1976,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1978,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 1.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1978,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1979,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1980,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 1.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1980,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1981,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1982,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 2.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1983,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1982,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1984,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 2.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1984,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1985,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1986,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 3.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1987,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1986,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1988,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 3.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1989,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1988,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1990,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 4.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1991,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1990,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1992,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 4.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1993,
+    "outcomeName": "2"
+   },
+   {
+    "outcomeId": 1992,
+    "outcomeName": "1"
+   }
+  ]
+ },
+ {
+  "marketId": 1994,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 5.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1994,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1995,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1996,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 5.5,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1996,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1997,
+    "outcomeName": "2"
+   }
+  ]
+ },
+ {
+  "marketId": 1998,
+  "marketLength": 2,
+  "marketName": "Leg Handicap",
+  "playerProp": false,
+  "sportId": 19,
+  "handicap": 6.0,
+  "period": "result",
+  "marketType": "spreads",
+  "outcomes": [
+   {
+    "outcomeId": 1998,
+    "outcomeName": "1"
+   },
+   {
+    "outcomeId": 1999,
+    "outcomeName": "2"
+   }
+  ]
+ }
+]

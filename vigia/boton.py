@@ -111,6 +111,12 @@ def decodificar(wm):
             # estado de carga (no se veian en pantalla)
             "b": _entero(d.get("b"), 1), "e": _entero(d.get("e"), 0),
             "ne": _entero(d.get("ne"), 0),
+            # lecturas de la API (f = "api", vigia/oddspapi.py): cuotas
+            # suspendidas que no se usan, y mercados anadidos de una lectura
+            # anterior del boton (sus titulos y la hora de esa lectura)
+            "ns": _entero(d.get("ns"), 0),
+            "bt": [str(t) for t in d.get("bt") or [] if isinstance(d.get("bt"), list)],
+            "bh": _entero(d.get("bh"), 0),
             "mercados": mercados}
 
 

@@ -112,7 +112,8 @@ def preparar_value_bets(nombres_disponibles):
         aviso = ("" if r["orden"] == "cartel" else
                  " ⚠️ No está en el calendario: J1 = el primero de Winamax "
                  "(compruébalo con el cartel).")
-        st.success(f"🌐 Cuotas de Winamax cargadas: **{j1}** vs **{j2}** "
+        origen = "Winamax (por OddsPapi)" if datos.get("f") == "api" else "Winamax"
+        st.success(f"🌐 Cuotas de {origen} cargadas: **{j1}** vs **{j2}** "
                    f"({n} casillas rellenadas; todas abajo, en «Cuotas de "
                    f"Winamax»).{aviso}")
     else:
@@ -266,6 +267,70 @@ def boton_app_winamax(j1_sel, j2_sel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CUOTAS DE WINAMAX POR LA API DE ODDSPAPI (vigia/oddspapi.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _clave_oddspapi():
+    """Secreto ODDSPAPI_KEY de la app, o ""."""
+    try:
+        return str(st.secrets.get("ODDSPAPI_KEY", "") or "").strip()
+    except Exception:
+        return ""
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _partidos_oddspapi(_clave, dia):
+    """Partidos de la Modus en OddsPapi (1 peticion cada media hora como
+    mucho; `dia` solo cambia la cache de un dia a otro)."""
+    from datetime import timezone
+    from vigia import oddspapi
+    return oddspapi.partidos(_clave, datetime.now(timezone.utc))
+
+
+def boton_api_cuotas(j1_sel, j2_sel):
+    """Boton que trae las cuotas de Winamax de este partido por la API de
+    OddsPapi y las carga como una lectura del boton «Modus value». Solo en
+    modo administrador y con el secreto ODDSPAPI_KEY (gasta peticiones de
+    tu plan)."""
+    clave = _clave_oddspapi()
+    if not clave or not es_admin():
+        return
+    if not st.button("📡 Traer cuotas de Winamax (API)", key="api_cuotas",
+                     use_container_width=True,
+                     help="Sin abrir Winamax: las pide a OddsPapi (gasta 1 petición de tu "
+                          "plan). Ganador, legs, hándicap de legs y 180s; el resto, con "
+                          "«Modus value»."):
+        return
+    from datetime import timezone
+    from vigia import oddspapi
+    ahora = datetime.now(timezone.utc)
+    try:
+        with st.spinner("Pidiendo las cuotas a OddsPapi…"):
+            dia = ahora.strftime("%Y-%m-%d")
+            f = oddspapi.buscar_partido(_partidos_oddspapi(clave, dia), j1_sel, j2_sel)
+            if f is None or f.get("statusId") != 0:   # lista vieja: se pide otra vez
+                _partidos_oddspapi.clear()
+                f = oddspapi.buscar_partido(_partidos_oddspapi(clave, dia), j1_sel, j2_sel)
+            if f is None:
+                st.warning(f"📡 OddsPapi no tiene {j1_sel} vs {j2_sel} en la Modus "
+                           "(de ayer a pasado mañana).")
+                return
+            datos = oddspapi.traducir(oddspapi.cuotas(clave, f["fixtureId"]), f,
+                                      ahora.timestamp())
+    except oddspapi.ErrorOddsPapi as ex:
+        st.error(f"📡 OddsPapi: {ex}.")
+        return
+    anterior = _lectura_guardada(j1_sel, j2_sel)
+    if anterior:
+        try:
+            datos = oddspapi.juntar(datos, decodificar(anterior))
+        except DatosNoValidos:
+            pass
+    st.session_state["url_entrada"] = {"wm": oddspapi.codificar(datos)}
+    st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CUOTAS DEL BOTON GUARDADAS POR PARTIDO (hasta que se juegue)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -377,7 +442,18 @@ def render_panel_winamax(j1, j2, j1_sel, j2_sel):
     st.markdown("---")
     st.markdown("### 🌐 Cuotas de Winamax")
     leidas = datetime.fromtimestamp(datos["h"], MADRID).strftime("%H:%M") if datos["h"] else "?"
-    if datos.get("f") == "pantalla":
+    if datos.get("f") == "api":
+        st.caption(f"Leídas de Winamax España por la API de OddsPapi a las {leidas}. "
+                   "OddsPapi solo da ganador, legs, hándicap de legs y 180s (quién hace "
+                   "más y hándicap): para el resto, pulsa «Modus value» en Winamax.")
+        if datos.get("ns"):
+            st.caption(f"⏸️ {datos['ns']} cuotas suspendidas en Winamax: no se usan.")
+        if datos.get("bt"):
+            hb = (datetime.fromtimestamp(datos["bh"], MADRID).strftime("%H:%M")
+                  if datos.get("bh") else "?")
+            st.caption(f"♻️ {', '.join(datos['bt'])}: de tu lectura del botón de las {hb} "
+                       "(no cuentan para las estadísticas).")
+    elif datos.get("f") == "pantalla":
         st.caption(f"Leídas a las {leidas} de lo que se veía en pantalla "
                    f"({len(datos['mercados'])} mercados). Winamax solo pinta los mercados "
                    "cercanos: si falta alguno, desplázate hasta verlo y vuelve a pulsar.")
@@ -482,6 +558,7 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     st.markdown("---")
     st.markdown("### 💰 Apuestas con valor")
     boton_app_winamax(j1_sel, j2_sel)
+    boton_api_cuotas(j1_sel, j2_sel)
     if not cuotas_sel:
         st.info("✍️ Escribe la cuota de tu casa en cualquier mercado de las pestañas "
                 "de arriba (o usa el botón «Modus value») y aquí verás si hay que "
@@ -698,7 +775,10 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
                    + motivo_poco_fiable(dict(info, j1=j1_sel, j2=j2_sel))
                    + ". Con tan pocos datos el modelo no es fiable.")
     filas = []
+    viejos = set(datos.get("bt") or [])   # de una lectura anterior del boton
     for s in w["selecciones"]:
+        if s["titulo"] in viejos:
+            continue
         p = probabilidad(calc, s["sel"])
         mercado = reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]]
         ev = reglas.evaluar(mercado, p, s["cuota"], banca=banca_app())
@@ -709,6 +789,8 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
                           verde="🟢" if ev["verde"] else "", importe=ev["importe"],
                           seleccion_json=json.dumps(s["sel"], ensure_ascii=False)))
     for titulo, salida, cuota in w["sin_asignar"]:
+        if titulo in viejos:
+            continue
         filas.append(dict(base, titulo=titulo, salida=salida, cuota=cuota))
     ok, error = anadir_winamax(filas)
     if ok:

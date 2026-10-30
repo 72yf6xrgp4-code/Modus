@@ -147,6 +147,39 @@ lanza `python -m pytest tests\test_boton.py`. Necesita Node con Playwright
 (`npm i -g playwright` y `npx playwright install chromium`); si no los tienes,
 pásame el archivo.
 
+## 2 bis. Cuotas por la API de OddsPapi (sin abrir Winamax)
+
+[OddsPapi](https://oddspapi.io) es un proveedor de cuotas de terceros que da
+las de **Winamax España** de la Modus. La app no pide nada a Winamax: se las
+pide a OddsPapi con tu clave.
+
+1. Regístrate en oddspapi.io (plan gratuito: unas 250 peticiones al mes) y
+   copia tu clave.
+2. En Streamlit Cloud → tu app → ⋮ → **Settings → Secrets**, añade arriba:
+   `ODDSPAPI_KEY = "tu_clave"` y guarda. La clave no va al repositorio.
+3. En **Value Bets**, con el partido elegido y en modo administrador, sale
+   **«📡 Traer cuotas de Winamax (API)»** (en «Apuestas con valor»). Cada
+   pulsación gasta 1 petición (y la lista de partidos, 1 cada media hora como
+   mucho).
+
+Las cuotas se cargan igual que con «Modus value»: casillas, «Todas las cuotas
+leídas», se mantienen hasta que empiece el partido y cuentan para las
+estadísticas (fuente `api`). Diferencias:
+
+- **Solo 5 mercados:** ganador, número de legs, hándicap de legs, quién hace
+  más 180s y hándicap de 180s. Los 180s totales, los de cada jugador y el
+  resultado exacto solo con «Modus value».
+- **Se juntan con el botón:** si ya leíste el partido con «Modus value», los
+  mercados que la API no da se toman de esa lectura (sale su hora). Esos no se
+  vuelven a guardar en las estadísticas: no son cuotas de ahora.
+- **Suspendidas:** las cuotas que Winamax tiene suspendidas (pasa justo antes
+  de empezar) no se usan; la app dice cuántas.
+- OddsPapi llama «Leg Handicap ±0,5» al **hándicap de 180s** de Winamax (en
+  Modus no hay empate en legs, y sus cuotas no son las del ganador): la app lo
+  trata como hándicap de 180s.
+- Winamax publica las cuotas poco antes de cada partido: si dice que aún no
+  hay, prueba más tarde.
+
 ## Reglas
 
 | Regla | Valor |
