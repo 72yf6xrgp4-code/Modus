@@ -289,3 +289,10 @@ una vez.
 `lecturas_boton`). Si vuelves a ese partido en Value Bets, aunque hayas
 cambiado de partido o cerrado la página, se vuelven a poner sus cuotas (la
 última lectura de hoy) hasta que el partido empiece.
+
+**Apuntar una apuesta no recomendada.** En «💰 Apuestas con valor», el
+desplegable «➕ Apuntar una apuesta no recomendada» lista las cuotas del
+partido que no pasan el filtro. Eliges una, pones el importe y se apunta como
+apostada (importe recomendado 0 y tu importe en `importe_real`). Cuenta en tus
+apuestas (tope, «Las que apostaste», beneficio real) y en 🎟️ Apuestas sale
+como «(no recomendada)»; no cuenta en las estadísticas del modelo.

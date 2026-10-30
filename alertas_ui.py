@@ -450,7 +450,9 @@ def _tarjeta(f):
     res_txt = {"ganada": "✅ ganada", "perdida": "❌ perdida"}.get(res, "")
     importe = "" if revisar else f" · <b>{_eur(importe_apostado(f))}</b>"
     if not revisar and str(f.get("importe_real") or "").strip():
-        importe += f" <span style='color:#64748b'>(recomendado {_eur(num(f.get('importe')))})</span>"
+        rec = num(f.get("importe"))
+        importe += (f" <span style='color:#64748b'>(recomendado {_eur(rec)})</span>" if rec
+                    else " <span style='color:#b45309'>(no recomendada)</span>")
     cuota = f"{num(f.get('cuota')):.2f}".replace(".", ",")
     e = lambda x: html_mod.escape(str(x or ""))  # noqa: E731
     st.markdown(

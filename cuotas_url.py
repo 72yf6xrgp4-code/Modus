@@ -523,6 +523,7 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
                 "apuesta en este partido.")
     for i, f in enumerate(apostables):
         _tarjeta(f, i, alertas, fecha, j1, j2, j1_sel, j2_sel, queda)
+    _apuntar_no_recomendada(filas, apostables, alertas, fecha, j1, j2, j1_sel, j2_sel, queda)
     casi = [f for f in filas if f["ev"]["verde"] and not f["ev"]["importe"]]
     if casi:
         st.caption(f"🟢 También con value, pero sin llegar al {reglas.EDGE_MIN*100:.0f} % "
@@ -534,6 +535,39 @@ def render_apuestas_valor(j1, j2, j1_sel, j2_sel):
     if apostables and ("alto" in (v1, v2) or "sin dato" in (v1, v2)):
         st.caption(f"ℹ️ Volatilidad: {j1_sel} {v1}, {j2_sel} {v2}. No cambia el importe, "
                    "pero con volatilidad alta el modelo acierta menos.")
+
+
+def _apuntar_no_recomendada(filas, apostables, alertas, fecha, j1, j2, j1_sel, j2_sel, queda):
+    """Apuntar como apostada una cuota que no pasa el filtro (la decides tu).
+    Se guarda con importe recomendado 0 y tu importe en importe_real: cuenta
+    en tus apuestas (tope, beneficio real), no en las estadisticas del
+    modelo."""
+    if not es_admin():
+        return
+    claves = {f["clave"] for f in apostables}
+    otras = [f for f in filas if f["clave"] not in claves]
+    if not otras:
+        return
+    with st.expander("➕ Apuntar una apuesta no recomendada"):
+        st.caption("Para apostar por tu cuenta algo que no pasa el filtro. Se apunta como "
+                   "apostada con tu importe: cuenta en tus apuestas (tope y beneficio real), "
+                   "pero no en las estadísticas del modelo.")
+        i = st.selectbox(
+            "Apuesta", range(len(otras)), key="man_sel",
+            format_func=lambda k: (f"{otras[k]['texto']} · {otras[k]['nombre_mercado']} @"
+                                   f"{_num(otras[k]['cuota'])} · edge "
+                                   f"{otras[k]['ev']['edge']*100:+.1f} %"))
+        f = otras[i]
+        imp = st.number_input("Importe (€)", min_value=0.5, step=0.5, value=5.0, key="man_imp")
+        previa = _fila_apuntada(alertas, fecha, j1_sel, j2_sel, f["clave"])
+        if previa is not None and previa.get("estado") == "apostada":
+            st.caption("✅ Ya la tienes apuntada como apostada (puedes cambiar el importe en "
+                       "🎟️ Apuestas).")
+            return
+        if imp > queda + 1e-9:
+            st.caption(f"⚠️ {_eur(imp)} supera lo que queda del tope de hoy ({_eur(queda)}).")
+        if st.button(f"✅ Apostar {_eur(imp)}", key="man_ok", type="primary"):
+            _guardar(f, "apostada", 0.0, imp, fecha, j1, j2, j1_sel, j2_sel)
 
 
 def _fila_apuntada(alertas, fecha, j1_sel, j2_sel, clave):
