@@ -210,8 +210,6 @@ de hoy:
    💰 Davies – van de Pas · 17:30
    ✅ Gana Davies → 10 €
    cuota 2,10 · aguanta hasta 1,95 · edge +22 % 🟢
-   ⏱️ Grupo C Viernes · partido 13 · previsto 17:30
-   💶 Quedan 35 € del tope de hoy
    ```
 
    «Aguanta hasta» es la cuota más baja con la que sigue habiendo value: si

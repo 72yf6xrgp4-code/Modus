@@ -469,10 +469,8 @@ class Vigia:
         queda = registro.tope_del_dia(alertas) - registro.gastado_del_dia(alertas, fecha)
         hora = (datetime.fromtimestamp(datos["t"], MADRID).strftime("%H:%M")
                 if datos["t"] else "")
-        titulo, texto = aviso.componer(
-            n1, n2, apuestas, edge_min, hora, jornada=info.get("jornada") or jornada,
-            n_partido=info.get("n_partido") or p["orden"] + 1, queda=queda,
-            vol=req["vol"], rebaja=req["rebaja"], info=info)
+        titulo, texto = aviso.componer(n1, n2, apuestas, edge_min, hora, queda=queda,
+                                       vol=req["vol"], rebaja=req["rebaja"], info=info)
         from vigia.boton import enlace_web_winamax
         enlace = enlace_app(self.aj.app_url, n1, n2)
         self.notif.enviar(texto, urgente=True, enlace=enlace, titulo=titulo,

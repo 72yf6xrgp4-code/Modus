@@ -121,8 +121,7 @@ def test_espera_al_ultimo_partido_y_a_sus_estadisticas_y_avisa_una_vez():
     assert n["titulo"] == "💰 Davies – van de Pas · 17:30" and n["urgente"]
     assert n["texto"].startswith("✅ Gana Davies → ")
     assert "cuota 1,56 · aguanta hasta " in n["texto"]
-    assert "⏱️ Grupo C Viernes · partido 5 · previsto 17:30" in n["texto"]
-    assert "💶 Quedan 50 € del tope de hoy" in n["texto"]
+    assert "⏱️" not in n["texto"] and "tope de hoy" not in n["texto"]
     assert n["acciones"][1] == ("Winamax", "https://www.winamax.es/apuestas-deportivas/match/76162502")
     assert [d["tipo"] for d in hoja.logs] == ["aviso"]
     # Lectura guardada para las estadisticas: fiable (2 partidos + historico)
@@ -201,14 +200,14 @@ def test_aviso_claro_con_tope_volatilidad_y_poco_fiable():
                 {"texto": "Más de 5,5 legs", "cuota": 1.9, "p": 0.64,
                  "ev": dict(ev, edge=0.22, verde=False, importe=5.0)}]
     titulo, texto = componer("David Davies", "Benito van de Pas", apuestas, 0.22, "17:30",
-                             "Grupo C Viernes", 13, queda=15, vol=13.0, rebaja=True,
+                             queda=15, vol=13.0, rebaja=True,
                              info={"previos_j1": 1, "previos_j2": 4})
     assert titulo == "💰 Davies – van de Pas · 17:30"
     lineas = texto.split("\n")
     assert lineas[0] == "✅ Gana Davies → 15 €"
     assert lineas[1] == "cuota 2,10 · aguanta hasta 1,97 · edge +30 % 🟢"
     assert lineas[2] == "✅ Más de 5,5 legs → 0 € (tope)"
-    assert "⛔ Tope de hoy alcanzado" not in texto and "💶 Quedan 15 €" in texto
+    assert "⏱️" not in texto and "tope de hoy" not in texto
     assert "⚠️ Volatilidad alta (13,0): edge exigido 22 %" in texto
     assert "⚠️ Poco fiable (David Davies: 1 partidos esta semana" in texto
     assert repartir_tope([10, 10], 12.5) == [10, 0]

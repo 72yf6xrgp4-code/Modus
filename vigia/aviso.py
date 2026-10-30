@@ -7,8 +7,6 @@ vigia/aviso.py - Texto del aviso al movil con las cuotas reales de Winamax
              cuota 2,10 · aguanta hasta 1,95 · edge +22 % 🟢
              ✅ Más de 5,5 legs → 5 €
              cuota 1,90 · aguanta hasta 1,84 · edge +21 %
-             ⏱️ Grupo C Viernes · partido 13 · previsto 17:30
-             💶 Quedan 35 € del tope de hoy
 
 'aguanta hasta' = la cuota mas baja con la que sigue habiendo value
 (el edge exigido): si en Winamax ya esta por debajo, no la hagas.
@@ -45,13 +43,14 @@ def repartir_tope(importes, queda):
     return salida
 
 
-def componer(j1, j2, apuestas, edge_min, hora, jornada="", n_partido="", queda=None,
-             vol=None, rebaja=False, info=None):
+def componer(j1, j2, apuestas, edge_min, hora, queda=None, vol=None, rebaja=False,
+             info=None):
     """(titulo, mensaje) del aviso.
 
     apuestas: [{texto, cuota, p, ev}] ordenadas por edge (las de importe > 0).
-    hora: 'HH:MM' prevista (o ''). queda: lo que queda del tope de hoy (None
-    = sin tope). info: {previos_j1, ...} para avisar si es poco fiable.
+    hora: 'HH:MM' prevista (o '', va en el titulo). queda: lo que queda del
+    tope de hoy (None = sin tope): los importes se recortan a eso. info:
+    {previos_j1, ...} para avisar si es poco fiable.
     """
     titulo = f"💰 {nombre_corto(j1)} – {nombre_corto(j2)}" + (f" · {hora}" if hora else "")
     importes = [a["ev"]["importe"] for a in apuestas[:MAX_APUESTAS]]
@@ -65,13 +64,6 @@ def componer(j1, j2, apuestas, edge_min, hora, jornada="", n_partido="", queda=N
                       f"edge {a['ev']['edge'] * 100:+.0f} %" + (" 🟢" if a["ev"]["verde"] else ""))
     if len(apuestas) > MAX_APUESTAS:
         lineas.append(f"(+{len(apuestas) - MAX_APUESTAS} más en la app)")
-    donde = " · ".join(x for x in (jornada, f"partido {n_partido}" if n_partido else "",
-                                   f"previsto {hora}" if hora else "") if x)
-    if donde:
-        lineas.append(f"⏱️ {donde}")
-    if queda is not None:
-        lineas.append(f"💶 Quedan {_eur(max(0.0, queda))} del tope de hoy"
-                      if queda > 0 else "⛔ Tope de hoy alcanzado")
     if rebaja and vol is not None:
         lineas.append(f"⚠️ Volatilidad alta ({vol:.1f}): edge exigido "
                       f"{edge_min * 100:.0f} %".replace(".", ","))
