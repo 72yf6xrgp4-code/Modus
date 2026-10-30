@@ -38,6 +38,7 @@ API_CADA_MIN = 3             # minutos entre lecturas del mismo partido
 API_MAX_POR_PARTIDO = 6      # lecturas como mucho de cada partido
 API_PARTIDOS_CADA_MIN = 180  # la lista de partidos (sus id) no cambia: cada 3 h
 API_PARTIDOS_REINTENTO_MIN = 15   # si falta un partido en la lista, otra como mucho cada 15 min
+API_PAUSA_SI_FALLA_MIN = 30  # sin peticiones o clave mala: cuotas minimas y se reintenta a los 30 min
 
 
 def ahora_madrid():
@@ -174,6 +175,7 @@ class Vigia:
         self._semana = {}           # jornadas de dias anteriores (no cambian)
         self._lecturas = {}         # partido -> (lecturas pedidas, hora de la ultima)
         self._lista, self._lista_t = None, None   # partidos de OddsPapi y cuando
+        self._api_parada = None     # hasta cuando no se usa OddsPapi (fallo definitivo)
         self.notif = notificador
         self.datos = datos
         self.aj = ajustes
@@ -341,7 +343,7 @@ class Vigia:
                     self._espera(clave, "; ".join(faltan))
                 elif sin_empezar.index(p["orden"]) > 1:
                     self._espera(clave, "faltan más de dos partidos para el suyo")
-                elif self._toca_leer(clave, ahora):
+                else:
                     listos.append((jornada, p, clave))
         # Los que empezaron sin llegar a avisar: por que (para ver retrasos)
         for clave in [c for c in self._esperas if c not in pendientes]:
@@ -353,6 +355,11 @@ class Vigia:
         # El modelo, con las estadisticas recien leidas (incluyen sus ultimos partidos)
         if self.datos.edad() > 50:
             self.datos.refrescar(ahora, forzar=True)
+        if self._api_parada and ahora < self._api_parada:
+            return self._sin_api(listos, fecha, len(pendientes))
+        listos = [x for x in listos if self._toca_leer(x[2], ahora)]
+        if not listos:
+            return len(pendientes)
         from vigia.oddspapi import ErrorOddsPapi, buscar_partido
         try:
             # La lista de partidos (sus id) se pide poco: cada 3 h, o antes si
@@ -368,16 +375,38 @@ class Vigia:
             log.warning("OddsPapi: %s", e)
             self._descartar("oddspapi", "", f"OddsPapi: {e}")
             self._descartados.pop("oddspapi", None)   # se reintenta en la siguiente
+            if e.definitivo:
+                return self._parar_api(e, ahora, listos, fecha, len(pendientes))
             return len(pendientes)
-        for jornada, p, clave in listos:
+        for i, (jornada, p, clave) in enumerate(listos):
             try:
                 self.evaluar_api(jornada, p, clave, fecha, partidos)
             except ErrorOddsPapi as e:
+                if e.definitivo:
+                    return self._parar_api(e, ahora, listos[i:], fecha, len(pendientes))
                 self._espera(clave, f"OddsPapi: {e}")
             except Exception as e:  # un partido no tumba el ciclo
                 log.exception("Error con %s", clave)
                 self._log("error", clave, repr(e)[:300])
         return len(pendientes)
+
+    def _parar_api(self, error, ahora, listos, fecha, pendientes):
+        """Sin peticiones en el plan o clave mala: no se usa OddsPapi durante
+        API_PAUSA_SI_FALLA_MIN minutos y se avisa con cuotas minimas."""
+        self._api_parada = ahora + timedelta(minutes=API_PAUSA_SI_FALLA_MIN)
+        self._log("error", "", f"OddsPapi: {error}. Avisos con cuotas mínimas; "
+                               f"se reintenta a las {self._api_parada:%H:%M}")
+        return self._sin_api(listos, fecha, pendientes)
+
+    def _sin_api(self, listos, fecha, pendientes):
+        """Avisos de antes (cuotas minimas) para los partidos listos."""
+        for jornada, p, clave in listos:
+            try:
+                self.evaluar(jornada, p, None, fecha)
+            except Exception as e:  # un partido no tumba el ciclo
+                log.exception("Error con %s", clave)
+                self._log("error", clave, repr(e)[:300])
+        return pendientes
 
     def _toca_leer(self, clave, ahora):
         """Si toca pedir otra vez las cuotas de este partido (cada

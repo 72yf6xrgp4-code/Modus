@@ -32,7 +32,12 @@ CASA = "winamax.es"
 
 
 class ErrorOddsPapi(Exception):
-    pass
+    """definitivo=True: no se arregla reintentando enseguida (sin peticiones
+    en el plan o clave no valida); el vigia vuelve a las cuotas minimas."""
+
+    def __init__(self, mensaje, definitivo=False):
+        super().__init__(mensaje)
+        self.definitivo = definitivo
 
 
 def _get(ruta, clave, **params):
@@ -43,9 +48,10 @@ def _get(ruta, clave, **params):
     except requests.RequestException as ex:
         raise ErrorOddsPapi(f"no se puede conectar ({type(ex).__name__})")
     if r.status_code in (401, 403):
-        raise ErrorOddsPapi("la clave ODDSPAPI_KEY no es válida")
+        raise ErrorOddsPapi("la clave ODDSPAPI_KEY no es válida", definitivo=True)
     if r.status_code == 429:
-        raise ErrorOddsPapi("has gastado las peticiones de tu plan (o demasiadas seguidas)")
+        raise ErrorOddsPapi("has gastado las peticiones de tu plan (o demasiadas seguidas)",
+                            definitivo=True)
     if r.status_code != 200:
         raise ErrorOddsPapi(f"error HTTP {r.status_code}")
     try:

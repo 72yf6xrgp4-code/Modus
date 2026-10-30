@@ -212,3 +212,25 @@ def test_aviso_claro_con_tope_volatilidad_y_poco_fiable():
     assert "⚠️ Poco fiable (David Davies: 1 partidos esta semana" in texto
     assert repartir_tope([10, 10], 12.5) == [10, 0]
     assert nombre_corto("Self") == "Self"
+
+
+def test_sin_peticiones_en_el_plan_avisa_con_cuotas_minimas_y_reintenta_luego():
+    from vigia.oddspapi import ErrorOddsPapi
+
+    class Agotada(Api):
+        def partidos(self, ahora):
+            self.pedidas.append("partidos")
+            raise ErrorOddsPapi("has gastado las peticiones de tu plan", definitivo=True)
+
+    v, datos, hoja, notif, api = _montar()
+    v.api = api = Agotada(ODDS)
+    datos.calendario[J][3]["estado"] = "terminado"
+    datos.contados["David Davies"] = 2
+    v.ciclo()
+    assert api.pedidas == ["partidos"]
+    assert len(notif.enviados) == 1                                  # aviso de antes
+    assert notif.enviados[0]["texto"].startswith("🎯 Siguiente: Davies vs Pas · Gana")
+    assert any("cuotas mínimas" in d["detalle"] for d in hoja.logs if d["tipo"] == "error")
+    RELOJ.mas(10)
+    v.ciclo()
+    assert api.pedidas == ["partidos"] and len(notif.enviados) == 1   # sin repetir ni pedir

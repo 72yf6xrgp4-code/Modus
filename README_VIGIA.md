@@ -227,6 +227,12 @@ partidos por semana, unos 490 al mes: ≈ 2.950), más la lista de partidos cada
 para el botón «Traer cuotas (API)» de la app. Se ajusta en `vigia/nucleo.py`
 (`API_CADA_MIN`, `API_MAX_POR_PARTIDO`).
 
+**Si OddsPapi falla** porque se acaban las peticiones del plan o la clave
+no vale, el vigía no se queda callado. Avisa como antes, con cuotas mínimas,
+con la misma espera al último partido, lo apunta en `vigia_log` y vuelve a
+probar OddsPapi a los 30 minutos. Con el plan gratuito (250 al mes) eso
+pasará a los 2-3 días de jornada.
+
 Si también tienes el vigía del portátil, ponle `ODDSPAPI_KEY` en su `.env`,
 o quita su tarea programada. Si no, el que llegue antes avisará con cuotas
 mínimas.
