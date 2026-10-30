@@ -14,7 +14,9 @@ log = logging.getLogger(__name__)
 
 
 class Consola:
-    def enviar(self, texto, urgente=False, enlace=None):
+    def enviar(self, texto, urgente=False, enlace=None, titulo=None, acciones=None):
+        if titulo:
+            texto = f"{titulo}\n{texto}"
         log.info("[aviso] %s%s", texto, f"  -> {enlace}" if enlace else "")
         print(texto + (f"\n   {enlace}" if enlace else ""), flush=True)
         return True
@@ -24,21 +26,23 @@ class Ntfy:
     def __init__(self, tema, servidor="https://ntfy.sh", timeout=10):
         if not tema:
             raise ValueError("Falta NTFY_TEMA en .env")
-        self.url = f"{servidor.rstrip('/')}/{tema}"
+        self.servidor = servidor.rstrip("/")
+        self.tema = tema
         self.timeout = timeout
 
-    def enviar(self, texto, urgente=False, enlace=None):
-        cab = {"Title": "Modus vigia", "Tags": "dart"}
-        if urgente:
-            cab["Priority"] = "high"
+    def enviar(self, texto, urgente=False, enlace=None, titulo=None, acciones=None):
+        """Se publica en JSON (admite tildes y emojis en el titulo).
+        enlace: lo que abre al tocar la notificacion (la app con el partido).
+        acciones: [(etiqueta, url)] botones bajo la notificacion."""
+        cuerpo = {"topic": self.tema, "title": titulo or "Modus vigía", "message": texto,
+                  "tags": ["dart"], "priority": 4 if urgente else 3}
         if enlace:
-            # Al tocar la notificacion se abre este enlace (la app con el
-            # partido ya elegido). Las cabeceras HTTP solo admiten ASCII:
-            # el enlace ya va codificado (urllib.parse.quote).
-            cab["Click"] = enlace
+            cuerpo["click"] = enlace
+        if acciones:
+            cuerpo["actions"] = [{"action": "view", "label": e, "url": u, "clear": True}
+                                 for e, u in acciones[:3]]
         try:
-            r = requests.post(self.url, data=texto.encode("utf-8"),
-                              headers=cab, timeout=self.timeout)
+            r = requests.post(self.servidor, json=cuerpo, timeout=self.timeout)
             r.raise_for_status()
             return True
         except requests.RequestException as e:
@@ -54,7 +58,9 @@ class Telegram:
         self.chat_id = chat_id
         self.timeout = timeout
 
-    def enviar(self, texto, urgente=False, enlace=None):
+    def enviar(self, texto, urgente=False, enlace=None, titulo=None, acciones=None):
+        if titulo:
+            texto = f"{titulo}\n{texto}"
         if enlace:
             texto = f"{texto}\n{enlace}"
         try:

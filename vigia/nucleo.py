@@ -3,7 +3,15 @@ vigia/nucleo.py - Logica del vigia de cuotas minimas: datos del modelo,
 hora estimada de cada partido, avisos y liquidacion de las apuestas.
 
 No hace ninguna peticion a Winamax. Todo se inyecta (hoja, notificador,
-fuente de datos, reloj) para poder probarlo sin red.
+fuente de datos, reloj y, si hay clave, el cliente de OddsPapi) para poder
+probarlo sin red.
+
+Con OddsPapi (ODDSPAPI_KEY) el vigia trabaja con las cuotas reales de
+Winamax: un partido esta listo cuando los partidos anteriores de sus dos
+jugadores estan terminados en la hoja Y sus estadisticas ya los cuentan
+(vigia/frescura.py). Desde ese momento y hasta que empieza, cada vuelta
+pide sus cuotas; guarda la primera lectura (cuotas_winamax, para las
+estadisticas) y avisa en cuanto alguna llega a tu edge.
 """
 
 import logging
@@ -15,7 +23,7 @@ from zoneinfo import ZoneInfo
 from modelo import datos as md
 from modelo.motor import calcular_partido
 from modelo.volatilidad import nivel_volatilidad
-from vigia import cuotas, reglas, registro
+from vigia import aviso, cuotas, reglas, registro
 from vigia.horario import dia_jornada, fecha_jornada, inicio_jornada, toca_avisar
 from vigia.nombres import emparejar, mismo_jugador
 
@@ -29,6 +37,11 @@ def ahora_madrid():
 
 def apellido(n):
     return n.split()[-1] if n else n
+
+
+def _vol_num(v):
+    """Indice de volatilidad como numero (2 decimales) o '' sin dato."""
+    return round(float(str(v).replace(",", ".")), 2) if nivel_volatilidad(v) else ""
 
 
 def enlace_app(app_url, j1, j2):
@@ -61,6 +74,22 @@ class DatosSheet:
         self.jugadores = {}
         self.calendario = {}   # jornada -> partidos_de_jornada
         self.jornada_hoy = None
+        self._lineas = {}      # jornada -> filas leidas en la ultima vuelta
+        self._stats = {}
+        self._hist, self._hist_t = None, 0.0
+
+    def edad(self):
+        """Segundos desde la ultima recarga de los jugadores."""
+        return time.time() - self._t
+
+    def stats_jornada(self, jornada):
+        """Estadisticas de los jugadores en esa jornada (n_partidos...), de
+        las filas ya leidas en esta vuelta si las hay (por la API: al
+        momento) o del CSV publicado."""
+        if jornada not in self._stats:
+            st = md.jugadores_desde_lineas(jornada, self._lineas.get(jornada))
+            self._stats[jornada] = st or md.cargar_jugadores(jornada)
+        return self._stats[jornada]
 
     def lineas(self, jornada):
         if self.lector:
@@ -80,8 +109,9 @@ class DatosSheet:
         recarga_seg. Devuelve True si se han recargado los jugadores."""
         dia = dia_jornada(ahora)
         if not forzar and time.time() - self._t < self.recarga_seg:
-            self.calendario = {j: md.partidos_de_jornada(self.lineas(j))
-                               for j in md.jornadas_del_dia(dia)}
+            self._lineas = {j: self.lineas(j) for j in md.jornadas_del_dia(dia)}
+            self._stats = {}
+            self.calendario = {j: md.partidos_de_jornada(l) for j, l in self._lineas.items()}
             return False
         # Igual que data_loading.cargar_forma_reciente: la jornada que toca
         # por hora, solo si ya tiene datos; volatilidad ajustada y semanas
@@ -90,13 +120,19 @@ class DatosSheet:
         ref, hist = None, {}
         if self.historico:
             try:
-                filas = self.historico()
+                if self._hist is None or time.time() - self._hist_t >= self.recarga_seg:
+                    self._hist, self._hist_t = self.historico(), time.time()
+                filas = self._hist
                 ref = mh.referencia_volatilidad([f.get("Volatilidad") for f in filas])
                 hist = mh.resumen_historico(filas, antes_de=mh.sabado_de_la_semana(dia), ref=ref)
             except Exception as e:
                 log.warning("No se pudo leer el Historico: %s", e)
+        # Filas de las jornadas de hoy (por la API: al momento). Sirven para el
+        # estado de los partidos y para las estadisticas de hoy.
+        self._lineas = {j: self.lineas(j) for j in md.jornadas_del_dia(dia)}
+        self._stats = {}
         jornada = md.jornada_por_hora(ahora)
-        hoy = mh.ajustar_jugadores(md.cargar_jugadores(jornada), ref) if jornada else {}
+        hoy = mh.ajustar_jugadores(self.stats_jornada(jornada), ref) if jornada else {}
         self.jornada_hoy = jornada if hoy else None
         resumen = mh.ajustar_jugadores(md.cargar_jugadores("Resumen Semanal"), ref)
         if not resumen:
@@ -105,8 +141,7 @@ class DatosSheet:
             jugadores = resumen
         else:
             jugadores = md.combinar_forma_reciente(resumen, hoy)
-        self.calendario = {j: md.partidos_de_jornada(self.lineas(j))
-                           for j in md.jornadas_del_dia(dia)}
+        self.calendario = {j: md.partidos_de_jornada(l) for j, l in self._lineas.items()}
         if hist:
             nombres = {n for ps in self.calendario.values() for p in ps for n in (p["j1"], p["j2"])}
             jugadores = mh.combinar_con_historico(jugadores, hist, nombres_extra=sorted(nombres))
@@ -121,8 +156,13 @@ class DatosSheet:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Vigia:
-    def __init__(self, hoja, notificador, datos, ajustes, reloj=ahora_madrid):
+    def __init__(self, hoja, notificador, datos, ajustes, reloj=ahora_madrid, api=None):
         self.hoja = hoja
+        self.api = api              # vigia.oddspapi.Cliente, o None
+        self._guardados = set()     # partidos con su lectura ya guardada
+        self._esperas = {}          # partido -> por que aun no esta listo
+        self._cerrados = set()      # partidos que ya empezaron (OddsPapi)
+        self._semana = {}           # jornadas de dias anteriores (no cambian)
         self.notif = notificador
         self.datos = datos
         self.aj = ajustes
@@ -189,6 +229,10 @@ class Vigia:
                 log.exception("Error liquidando")
 
         dia = dia_jornada(ahora)
+        if self.api:
+            pendientes = self._ciclo_api(ahora, fecha)
+            self.hoja.volcar_log()
+            return pendientes
         pendientes = 0
         for jornada, lista in self.datos.calendario.items():
             inicio = inicio_jornada(jornada, dia) or ahora
@@ -259,6 +303,173 @@ class Vigia:
         self._log("aviso", partido, texto)
         self.hoja.volcar_log()   # cuanto antes, para que el otro vigia lo vea
         log.info("AVISO %s", texto)
+
+    # ── con OddsPapi: cuotas reales de Winamax ───────────────────────────
+    def _espera(self, clave, motivo):
+        if self._esperas.get(clave) != motivo:
+            log.info("Esperando %s: %s", clave, motivo)
+        self._esperas[clave] = motivo
+
+    def _ciclo_api(self, ahora, fecha):
+        """Una vuelta con OddsPapi. Devuelve cuantos partidos quedan sin empezar."""
+        from vigia.frescura import partido_anterior
+        listos, pendientes = [], set()
+        for jornada, lista in self.datos.calendario.items():
+            for p in lista:
+                if p["estado"] != "pendiente":
+                    continue
+                clave = self._partido(jornada, p)
+                pendientes.add(clave)
+                if (clave in self._descartados or clave in self._cerrados
+                        or clave in self._avisados):
+                    continue
+                fr = partido_anterior(lista, p["j1"], p["j2"], self.datos.stats_jornada(jornada))
+                faltan = [f"{r['jugador']}: {r['texto']}" for r in fr if not r["ok"]]
+                if faltan:
+                    self._espera(clave, "; ".join(faltan))
+                else:
+                    listos.append((jornada, p, clave))
+        # Los que empezaron sin llegar a avisar: por que (para ver retrasos)
+        for clave in [c for c in self._esperas if c not in pendientes]:
+            motivo = self._esperas.pop(clave)
+            if clave not in self._avisados:
+                self._log("sin aviso", clave, f"empezó esperando: {motivo}"[:300])
+        if not listos:
+            return len(pendientes)
+        # El modelo, con las estadisticas recien leidas (incluyen sus ultimos partidos)
+        if self.datos.edad() > 50:
+            self.datos.refrescar(ahora, forzar=True)
+        from vigia.oddspapi import ErrorOddsPapi
+        try:
+            partidos = self.api.partidos(ahora)
+        except ErrorOddsPapi as e:
+            log.warning("OddsPapi: %s", e)
+            self._descartar("oddspapi", "", f"OddsPapi: {e}")
+            self._descartados.pop("oddspapi", None)   # se reintenta en la siguiente
+            return len(pendientes)
+        for jornada, p, clave in listos:
+            try:
+                self.evaluar_api(jornada, p, clave, fecha, partidos)
+            except ErrorOddsPapi as e:
+                self._espera(clave, f"OddsPapi: {e}")
+            except Exception as e:  # un partido no tumba el ciclo
+                log.exception("Error con %s", clave)
+                self._log("error", clave, repr(e)[:300])
+        return len(pendientes)
+
+    def _info_partido(self, j1, j2, d1, d2):
+        """{jornada, n_partido, previos_j1, previos_j2, semanas_j1, semanas_j2}."""
+        from vigia.frescura import info_partido
+        dia = dia_jornada(self.reloj())
+        hoy = md.jornadas_del_dia(dia)
+        semana = {}
+        for j in md.jornadas_hasta(dia):
+            if j in self.datos.calendario:
+                semana[j] = self.datos.calendario[j]
+            else:
+                if j not in self._semana:
+                    self._semana[j] = md.partidos_de_jornada(self.datos.lineas(j))
+                semana[j] = self._semana[j]
+        info = info_partido(semana, hoy, j1, j2)
+        return dict(info, semanas_j1=int(d1.get("semanas_historico") or 0),
+                    semanas_j2=int(d2.get("semanas_historico") or 0))
+
+    def evaluar_api(self, jornada, p, clave, fecha, partidos):
+        """Partido listo: pide sus cuotas de Winamax a OddsPapi, guarda la
+        primera lectura y avisa (una vez) si alguna llega a tu edge."""
+        from modelo.motor import probabilidad
+        from vigia import oddspapi
+        from vigia.boton import DatosNoValidos, decodificar, preparar
+        from vigia.mercados import texto_seleccion
+        partido = clave
+        db = {v["nombre_original"]: v for v in self.datos.jugadores.values()}
+        n1, n2 = emparejar(p["j1"], list(db)), emparejar(p["j2"], list(db))
+        if not n1 or not n2 or n1 == n2:
+            falta = [c for c, n in ((p["j1"], n1), (p["j2"], n2)) if not n]
+            return self._descartar(clave, partido,
+                                   f"no esta en los datos: {', '.join(falta) or n1}")
+        d1, d2 = db[n1], db[n2]   # J1 = primero del cartel
+        if d1.get("PR", 0) <= 0 or d2.get("PR", 0) <= 0:
+            return self._descartar(clave, partido, "sin Puntuacion Global")
+        f = oddspapi.buscar_partido(partidos, n1, n2)
+        if f is None:
+            return self._espera(clave, "OddsPapi no tiene el partido")
+        if f.get("statusId") != 0:
+            self._cerrados.add(clave)
+            return
+        if not f.get("hasOdds"):
+            return self._espera(clave, "Winamax aún no tiene cuotas")
+        odds = self.api.cuotas(f["fixtureId"])
+        if odds.get("statusId", 0) != 0:
+            self._cerrados.add(clave)
+            return
+        try:
+            datos = decodificar(oddspapi.codificar(
+                oddspapi.traducir(odds, f, self.reloj().timestamp(), self.api.casa)))
+            r = preparar(datos, [n1, n2], [(n1, n2)])
+        except (oddspapi.ErrorOddsPapi, DatosNoValidos) as e:
+            return self._espera(clave, str(e))
+        self._esperas.pop(clave, None)
+
+        req = reglas.requisito_volatilidad(d1.get("volatilidad"), d2.get("volatilidad"))
+        edge_min = req["edge_min"] if req["ok"] else reglas.EDGE_MIN
+        calc = calcular_partido(d1, d2, j1_saca_primero=True)
+        alertas = self.hoja.alertas()
+        banca = registro.banca_actual(alertas)
+        apuestas = []
+        for s in r["selecciones"]:
+            prob = probabilidad(calc, s["sel"])
+            if prob is None:
+                continue
+            ev = reglas.evaluar(reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]], prob, s["cuota"],
+                                edge_min, req["rebaja"], banca)
+            if ev["importe"] > 0:
+                apuestas.append({"texto": texto_seleccion(s["sel"], n1, n2),
+                                 "cuota": s["cuota"], "p": prob, "ev": ev})
+        apuestas.sort(key=lambda a: a["ev"]["edge"], reverse=True)
+
+        avisar = req["ok"] and apuestas and not self._ya_avisado(clave, fecha)
+        info = None
+        if clave not in self._guardados or avisar:
+            info = self._info_partido(n1, n2, d1, d2)
+            self._guardar_lectura(datos, r, calc, banca, info, d1, d2, fecha)
+            self._guardados.add(clave)
+        if not avisar:
+            if not req["ok"]:
+                self._descartar(clave, partido, req["motivo"])
+            return
+        queda = registro.tope_del_dia(alertas) - registro.gastado_del_dia(alertas, fecha)
+        hora = (datetime.fromtimestamp(datos["t"], MADRID).strftime("%H:%M")
+                if datos["t"] else "")
+        titulo, texto = aviso.componer(
+            n1, n2, apuestas, edge_min, hora, jornada=info.get("jornada") or jornada,
+            n_partido=info.get("n_partido") or p["orden"] + 1, queda=queda,
+            vol=req["vol"], rebaja=req["rebaja"], info=info)
+        from vigia.boton import enlace_web_winamax
+        enlace = enlace_app(self.aj.app_url, n1, n2)
+        self.notif.enviar(texto, urgente=True, enlace=enlace, titulo=titulo,
+                          acciones=[("Abrir en la app", enlace),
+                                    ("Winamax", enlace_web_winamax(datos["id"]))])
+        self._avisados.add(clave)
+        self._log("aviso", partido, f"{titulo} | {texto}".replace("\n", " | ")[:500])
+        self.hoja.volcar_log()   # cuanto antes, para que el otro vigia lo vea
+        log.info("AVISO %s\n%s", titulo, texto)
+
+    def _guardar_lectura(self, datos, r, calc, banca, info, d1, d2, fecha):
+        """Guarda la lectura en cuotas_winamax (solo partidos fiables, como
+        la app), con fuente 'vigia'."""
+        if not registro.fiable(info):
+            return
+        ahora = self.reloj()
+        base = dict(info, fecha=fecha, hora=ahora.strftime("%H:%M"), lectura=datos["h"],
+                    match_id=datos["id"], j1=r["j1"], j2=r["j2"],
+                    inicio=(datetime.fromtimestamp(datos["t"], MADRID)
+                            .strftime("%Y-%m-%d %H:%M") if datos["t"] else ""),
+                    vol_j1=_vol_num(d1.get("volatilidad")),
+                    vol_j2=_vol_num(d2.get("volatilidad")), fuente="vigia", resultado="")
+        filas = registro.filas_de_lectura(base, r["selecciones"], r["sin_asignar"], calc, banca)
+        if filas:
+            self.hoja.anadir_winamax(filas)
 
     # ── resultados de las apuestas apuntadas en la app ───────────────────
     def _partido_real(self, f, cache):

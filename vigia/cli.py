@@ -13,6 +13,13 @@ vigia/cli.py - Linea de comandos:
                                      dentro de la ventana avisa y apunta
                                      resultados; fuera, solo resultados
     python -m vigia --probar-aviso   manda un aviso de prueba al movil
+    python -m vigia --max-minutos 345
+                                     como el primero, pero sale como mucho a
+                                     los 345 min (GitHub Actions corta a las 6 h)
+
+Con ODDSPAPI_KEY (en .env o en el entorno) avisa con las cuotas reales de
+Winamax por la API de OddsPapi (ver vigia/nucleo.py); sin ella, con las
+cuotas minimas.
 """
 
 import argparse
@@ -65,6 +72,9 @@ def _argumentos(argv):
                     help="una sola pasada y sale (la lanza GitHub Actions cada "
                          "pocos minutos): avisos dentro de la ventana y "
                          "resultados pendientes siempre")
+    ap.add_argument("--max-minutos", type=int, default=None,
+                    help="sale como mucho a los N minutos de arrancar (GitHub "
+                         "Actions corta los trabajos a las 6 h)")
     ap.add_argument("--liquidar", action="store_true",
                     help="solo apunta los resultados pendientes y sale")
     ap.add_argument("--notificador", default=None,
@@ -91,6 +101,15 @@ def _hoja(aj, simular):
         raise SystemExit("Falta GOOGLE_CREDENCIALES en .env")
     hoja = HojaGoogle(cred, aj.sheet_id, aj.sheet_id_datos)
     return HojaSoloLectura(hoja) if simular else hoja
+
+
+def _api(aj):
+    """Cliente de OddsPapi si hay ODDSPAPI_KEY, o None."""
+    if not aj.oddspapi_key:
+        return None
+    from vigia.oddspapi import Cliente
+    log.info("Cuotas de %s por OddsPapi", aj.oddspapi_casa)
+    return Cliente(aj.oddspapi_key, aj.oddspapi_casa)
 
 
 def _liquidar(aj, args):
@@ -199,7 +218,7 @@ def main(argv=None):
                  else notif_mod.crear(args.notificador or aj.notificador, aj))
         hoja = _hoja(aj, args.simular)
         vigia = Vigia(hoja, notif, DatosSheet(lector=getattr(hoja, "leer_jornada", None),
-                         historico=getattr(hoja, "historico", None)), aj)
+                         historico=getattr(hoja, "historico", None)), aj, api=_api(aj))
         vigia.ciclo()   # la primera vuelta tambien apunta resultados
         vigia.hoja.volcar_log()
         return 0
@@ -228,6 +247,8 @@ def main(argv=None):
         fin = ahora.replace(hour=h, minute=m, second=0, microsecond=0)
         if fin <= ahora:
             fin += timedelta(days=1)
+    if args.max_minutos:
+        fin = min(fin, ahora + timedelta(minutes=args.max_minutos))
 
     notif = (notif_mod.Consola() if args.simular
              else notif_mod.crear(args.notificador or aj.notificador, aj))
@@ -236,7 +257,7 @@ def main(argv=None):
     vigia = Vigia(hoja, notif,
                   DatosSheet(aj.recarga_datos_seg, lector=getattr(hoja, "leer_jornada", None),
                              historico=getattr(hoja, "historico", None)),
-                  aj)
+                  aj, api=_api(aj))
     intervalo = max(30, args.intervalo)
     vigia._log("inicio", "", f"hasta {fin.strftime('%H:%M')}"
                f"{' (simulacion)' if args.simular else ''}")
@@ -258,6 +279,7 @@ def main(argv=None):
             vigia.liquidar()
         except Exception:
             log.exception("Error liquidando al salir")
-        vigia._log("fin", "", ahora_madrid().strftime("%H:%M"))
+        vigia._log("fin", "", ahora_madrid().strftime("%H:%M")
+                   + (f" · {vigia.api.peticiones} peticiones a OddsPapi" if vigia.api else ""))
         vigia.hoja.volcar_log()
     return 0

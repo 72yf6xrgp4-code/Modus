@@ -551,6 +551,22 @@ def cargar_jugadores(pestana):
         return {}
 
 
+def jugadores_desde_lineas(pestana, lineas):
+    """Como cargar_jugadores, con las filas ya leidas (por la API de Google,
+    al momento; el CSV publicado va con minutos de retraso). Se pasan por
+    CSV para que pandas las lea igual que el CSV publicado."""
+    if not lineas:
+        return {}
+    buf = io.StringIO()
+    csv.writer(buf).writerows(lineas)
+    buf.seek(0)
+    try:
+        return jugadores_desde_df(pestana, pd.read_csv(buf, header=None))
+    except Exception as e:
+        log.error("Error leyendo los jugadores de %s: %s", pestana, e)
+        return {}
+
+
 def descargar_lineas(pestana, timeout=8):
     """CSV de una pestana como lista de filas (listas de str)."""
     url = URLS.get(pestana)

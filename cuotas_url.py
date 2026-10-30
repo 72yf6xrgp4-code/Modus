@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from helpers import es_admin, fecha_jornada_madrid
-from modelo.motor import calcular_partido, probabilidad
+from modelo.motor import calcular_partido
 from modelo.volatilidad import nivel_volatilidad
 from vigia import reglas
 from vigia.boton import (VERSION_BOTON, DatosNoValidos, casilla, decodificar, preparar,
@@ -28,7 +28,6 @@ from vigia.boton import (VERSION_BOTON, DatosNoValidos, casilla, decodificar, pr
 from vigia.cuotas import evaluar_cuotas
 from vigia.registro import (estado_partido, fiable, gastado_del_dia, motivo_poco_fiable,
                             tope_del_dia)
-from vigia.mercados import texto_seleccion
 from vigia.nombres import emparejar
 
 SECCION_DE_PARAM = {"value": "💰 VALUE BETS", "apuestas": "🎟️ APUESTAS",
@@ -738,7 +737,6 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
     """Guarda en la pestana cuotas_winamax TODAS las cuotas leidas con el
     boton (una vez por pulsacion), con la probabilidad del modelo y el edge
     de ese momento, para comparar y sacar estadisticas."""
-    import json
     lectura = f"{datos['id'] or j1_sel}-{datos['h']}"
     if not es_admin() or w.get("restaurada"):
         return
@@ -774,24 +772,9 @@ def _guardar_lectura(w, datos, calc, j1, j2, j1_sel, j2_sel):
         return fin("📊 No se guardan las cuotas para las estadísticas: "
                    + motivo_poco_fiable(dict(info, j1=j1_sel, j2=j2_sel))
                    + ". Con tan pocos datos el modelo no es fiable.")
-    filas = []
-    viejos = set(datos.get("bt") or [])   # de una lectura anterior del boton
-    for s in w["selecciones"]:
-        if s["titulo"] in viejos:
-            continue
-        p = probabilidad(calc, s["sel"])
-        mercado = reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]]
-        ev = reglas.evaluar(mercado, p, s["cuota"], banca=banca_app())
-        filas.append(dict(base, titulo=s["titulo"], salida=s["label"], mercado=s["nombre"],
-                          seleccion=texto_seleccion(s["sel"], j1_sel, j2_sel),
-                          cuota=s["cuota"], p_modelo=round(p, 4),
-                          cuota_justa=round(1.0 / p, 2), edge=round(ev["edge"], 4),
-                          verde="🟢" if ev["verde"] else "", importe=ev["importe"],
-                          seleccion_json=json.dumps(s["sel"], ensure_ascii=False)))
-    for titulo, salida, cuota in w["sin_asignar"]:
-        if titulo in viejos:
-            continue
-        filas.append(dict(base, titulo=titulo, salida=salida, cuota=cuota))
+    from vigia.registro import filas_de_lectura
+    filas = filas_de_lectura(base, w["selecciones"], w["sin_asignar"], calc, banca_app(),
+                             viejos=datos.get("bt"))
     ok, error = anadir_winamax(filas)
     if ok:
         fin(f"💾 {len(filas)} cuotas guardadas en la pestaña cuotas_winamax (partido "

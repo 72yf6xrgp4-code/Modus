@@ -82,6 +82,13 @@ reescriba (la semana siguiente): unos 6 días.
 
 ## 1 bis. Vigía en GitHub (sin el portátil)
 
+> **Con OddsPapi (recomendado).** Con el secreto `ODDSPAPI_KEY` el vigía usa
+> las cuotas reales de Winamax España y revisa **cada minuto** durante toda la
+> ventana (ver «Vigía con cuotas reales» más abajo). Para eso el workflow es
+> `python -m vigia --max-minutos 340` con `timeout-minutes: 355` y el secreto
+> `ODDSPAPI_KEY` en el paso del vigía (te pasé el `vigia.yml` nuevo). Con el
+> repositorio público, los minutos de GitHub Actions son gratis.
+
 El mismo vigía puede correr en GitHub Actions con una pasada cada pocos
 minutos (`python -m vigia --una-vez`): dentro de
 la ventana avisa por ntfy y rellena `cuotas_minimas`; siempre apunta los
@@ -179,6 +186,49 @@ estadísticas (fuente `api`). Diferencias:
   trata como hándicap de 180s.
 - Winamax publica las cuotas poco antes de cada partido: si dice que aún no
   hay, prueba más tarde.
+
+## Vigía con cuotas reales (OddsPapi)
+
+Con `ODDSPAPI_KEY` (secreto de GitHub o `.env`) el vigía ya no avisa con
+cuotas mínimas al terminar el partido anterior. Para cada partido pendiente
+de hoy:
+
+1. **Espera a sus datos:** los partidos anteriores de los **dos jugadores**
+   tienen que estar terminados en la hoja de la jornada **y** contados en sus
+   estadísticas de hoy. Se leen por la API de Google, al momento.
+2. **Desde entonces y hasta que empieza**, cada minuto pide sus cuotas de
+   Winamax a OddsPapi (solo si Winamax ya las tiene) y las evalúa con tus
+   reglas. Usa el edge exigido por volatilidad, el ¼ de Kelly y el tope del
+   día.
+3. **Guarda la primera lectura** en `cuotas_winamax` (fuente `vigia`; solo
+   partidos fiables, como la app) para las estadísticas. Así se recogen las
+   cuotas de todos los partidos aunque no los mires.
+4. **Avisa una vez**, en cuanto alguna cuota llega a tu edge:
+
+   ```
+   💰 Davies – van de Pas · 17:30
+   ✅ Gana Davies → 10 €
+   cuota 2,10 · aguanta hasta 1,95 · edge +22 % 🟢
+   ⏱️ Grupo C Viernes · partido 13 · previsto 17:30
+   💶 Quedan 35 € del tope de hoy
+   ```
+
+   «Aguanta hasta» es la cuota más baja con la que sigue habiendo value: si
+   en Winamax ya está por debajo, no la hagas. Tocar el aviso abre la app con
+   el partido; debajo hay botones «Abrir en la app» y «Winamax». Sin value no
+   avisa. Volatilidad de más de 18: guarda la lectura pero no avisa.
+
+Si un partido empieza sin llegar a avisar, `vigia_log` dice por qué estaba
+esperando (tipo `sin aviso`): sirve para ver si la hoja va con retraso. Al
+final de cada tanda, el log apunta cuántas peticiones a OddsPapi ha hecho.
+
+**Peticiones:** la lista de partidos, 1 por minuto cuando hay algún partido
+listo, más las cuotas de cada partido listo cada minuto hasta que empieza o
+se avisa. Son unas 15.000-25.000 al mes, y nada fuera de las ventanas.
+
+Si también tienes el vigía del portátil, ponle `ODDSPAPI_KEY` en su `.env`,
+o quita su tarea programada. Si no, el que llegue antes avisará con cuotas
+mínimas.
 
 ## Reglas
 

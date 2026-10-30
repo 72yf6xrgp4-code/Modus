@@ -41,6 +41,10 @@ class Ajustes:
     # Sheet con las pestanas de jornada (para leer el estado de los
     # partidos por la API, al momento). Por defecto, el mismo SHEET_ID.
     sheet_id_datos: str = ""
+    # Cuotas reales de Winamax por la API de OddsPapi (vigia/oddspapi.py).
+    # Sin clave, el vigia avisa con cuotas minimas, como antes.
+    oddspapi_key: str = ""
+    oddspapi_casa: str = "winamax.es"
 
 
 def cargar_ajustes():
@@ -60,4 +64,6 @@ def cargar_ajustes():
         recarga_datos_seg=int(e("RECARGA_DATOS_SEG", "300")),
         aviso_min_antes=int(e("AVISO_MIN_ANTES", "10")),
         sheet_id_datos=e("SHEET_ID_DATOS", ""),
+        oddspapi_key=e("ODDSPAPI_KEY", "").strip(),
+        oddspapi_casa=e("ODDSPAPI_CASA", "winamax.es"),
     )

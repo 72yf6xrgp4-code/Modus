@@ -110,6 +110,11 @@ class HojaGoogle:
         except Exception:
             return []
 
+    def anadir_winamax(self, filas):
+        """Cuotas de Winamax leidas (una fila por salida), en una peticion."""
+        self.ws_winamax.append_rows([[f.get(c, "") for c in COLUMNAS_WINAMAX]
+                                     for f in filas], value_input_option="RAW")
+
     def actualizar_winamax(self, cambios):
         """[(n_fila, {columna: valor})] en una sola peticion."""
         self.ws_winamax.batch_update(_celdas(COLUMNAS_WINAMAX, cambios),
@@ -160,6 +165,9 @@ class HojaMemoria:
     def historico(self):
         return []
 
+    def anadir_winamax(self, filas):
+        self._winamax.extend(dict(f) for f in filas)
+
     def actualizar_winamax(self, cambios):
         for n, campos in cambios:
             self._winamax[n - 2].update(campos)
@@ -201,6 +209,9 @@ class HojaSoloLectura:
 
     def historico(self):
         return self._hoja.historico()
+
+    def anadir_winamax(self, filas):
+        log.info("[simular] %d cuotas de Winamax leidas (no se guardan)", len(filas))
 
     def actualizar_winamax(self, cambios):
         log.info("[simular] %d cuotas de Winamax actualizadas", len(cambios))

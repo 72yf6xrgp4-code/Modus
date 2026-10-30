@@ -217,3 +217,36 @@ def codificar(datos):
     """datos -> base64url, como lo manda el boton."""
     crudo = json.dumps(datos, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(crudo).decode("ascii").rstrip("=")
+
+
+class Cliente:
+    """Lo que usa el vigia: lista de partidos y cuotas de un partido, con
+    la clave y la casa puestas. Cuenta las peticiones (para el log)."""
+
+    PAUSA = 1.1   # OddsPapi pide 1 s entre llamadas al mismo endpoint
+
+    def __init__(self, clave, casa=CASA, get=_get, dormir=None):
+        import time
+        if not clave:
+            raise ValueError("Falta ODDSPAPI_KEY")
+        self.clave, self.casa, self._get = clave, casa, get
+        self._dormir = dormir or time.sleep
+        self._ultima = {}
+        self.peticiones = 0
+
+    def _contar(self, ruta, clave, **params):
+        import time
+        espera = self.PAUSA - (time.monotonic() - self._ultima.get(ruta, -1e9))
+        if espera > 0:
+            self._dormir(espera)
+        self.peticiones += 1
+        try:
+            return self._get(ruta, clave, **params)
+        finally:
+            self._ultima[ruta] = time.monotonic()
+
+    def partidos(self, ahora):
+        return partidos(self.clave, ahora, get=self._contar)
+
+    def cuotas(self, fixture_id):
+        return cuotas(self.clave, fixture_id, self.casa, get=self._contar)

@@ -135,3 +135,13 @@ def test_juntar_con_la_lectura_del_boton():
     otra = oddspapi.juntar(oddspapi.traducir(ODDS, DAVIES, AHORA + 60), d)
     assert otra["bt"] == ["Total 180"] and otra["bh"] == 111 and len(otra["m"]) == len(datos["m"])
     assert "bt" not in oddspapi.juntar(api, decodificar(oddspapi.codificar(api)))
+
+
+def test_cliente_cuenta_peticiones_y_espera_entre_llamadas_al_mismo_endpoint():
+    esperas = []
+    c = oddspapi.Cliente("k", get=lambda ruta, clave, **p: ODDS if ruta == "odds" else PARTIDOS,
+                         dormir=esperas.append)
+    c.partidos(datetime(2026, 10, 30, tzinfo=timezone.utc))
+    c.cuotas("a")
+    c.cuotas("b")
+    assert c.peticiones == 3 and len(esperas) == 1 and 0 < esperas[0] <= 1.1

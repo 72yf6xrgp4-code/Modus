@@ -28,9 +28,12 @@ class Datos:
 class Notif:
     def __init__(self):
         self.enviados = []
+        self.completos = []
 
-    def enviar(self, texto, urgente=False, enlace=None):
+    def enviar(self, texto, urgente=False, enlace=None, titulo=None, acciones=None):
         self.enviados.append((texto, enlace))
+        self.completos.append({"texto": texto, "enlace": enlace, "titulo": titulo,
+                               "acciones": acciones, "urgente": urgente})
         return True
 
 

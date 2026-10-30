@@ -60,6 +60,35 @@ COLUMNAS_WINAMAX = [
     "semanas_j1", "semanas_j2",
 ]
 
+def filas_de_lectura(base, selecciones, sin_asignar, calc, banca, viejos=()):
+    """Filas de cuotas_winamax de una lectura de cuotas (boton, app o
+    vigia): una por salida, con la probabilidad del modelo y el edge de ese
+    momento (20 %: para las estadisticas la volatilidad no cuenta). Las
+    salidas sin asignar van sin modelo. viejos: titulos de mercados que
+    vienen de una lectura anterior (no se guardan otra vez)."""
+    import json
+    from modelo.motor import probabilidad
+    from vigia import reglas
+    from vigia.mercados import texto_seleccion
+    viejos = set(viejos or ())
+    filas = []
+    for s in selecciones:
+        if s["titulo"] in viejos:
+            continue
+        p = probabilidad(calc, s["sel"])
+        ev = reglas.evaluar(reglas.MERCADO_DE_TIPO[s["sel"]["tipo"]], p, s["cuota"], banca=banca)
+        filas.append(dict(base, titulo=s["titulo"], salida=s["label"], mercado=s["nombre"],
+                          seleccion=texto_seleccion(s["sel"], base["j1"], base["j2"]),
+                          cuota=s["cuota"], p_modelo=round(p, 4),
+                          cuota_justa=round(1.0 / p, 2), edge=round(ev["edge"], 4),
+                          verde="🟢" if ev["verde"] else "", importe=ev["importe"],
+                          seleccion_json=json.dumps(s["sel"], ensure_ascii=False)))
+    for titulo, salida, cuota in sin_asignar:
+        if titulo not in viejos:
+            filas.append(dict(base, titulo=titulo, salida=salida, cuota=cuota))
+    return filas
+
+
 ESTADO_PENDIENTE = "pendiente"
 ESTADO_APOSTADA = "apostada"
 ESTADO_NO_APOSTADA = "no apostada"
